@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Auth0Log {
+  logId       String   @id @map("log_id")
+  timestamp   DateTime
+  type        String
+  description String?
+  clientId    String?  @map("client_id")
+  clientName  String?  @map("client_name")
+  connection  String?
+  userIdHash  String?  @map("user_id_hash")
+  payload     Json     @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([timestamp])
+  @@index([type, timestamp])
+  @@map("auth0_logs")
+}
+
+model ServiceMetricSample {
+  id          BigInt   @id @default(autoincrement())
+  timestamp   DateTime
+  serviceName String   @map("service_name")
+  metricName  String   @map("metric_name")
+  labels      Json     @map("labels_json")
+  value       Float
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([serviceName, metricName, timestamp])
+  @@map("service_metrics_timeseries")
+}
+
+model NearTransaction {
+  txHash               String   @id @map("tx_hash")
+  blockHeight          BigInt?  @map("block_height")
+  blockTimestamp       DateTime? @map("block_timestamp")
+  signerAccountId      String?  @map("signer_account_id")
+  receiverId           String?  @map("receiver_id")
+  methodName           String?  @map("method_name")
+  executionStatus      String?  @map("execution_status")
+  failureReason        String?  @map("failure_reason")
+  gasBurnt             BigInt?  @map("gas_burnt")
+  attachedDepositYocto String?  @map("attached_deposit_yocto")
+  payload              Json     @map("payload_json")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([blockHeight])
+  @@map("near_transactions")
+}
+
+model IndexerCheckpoint {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("indexer_checkpoints")
+}
