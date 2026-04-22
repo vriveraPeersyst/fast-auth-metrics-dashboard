@@ -96,16 +96,20 @@ pnpm prisma migrate deploy
 
 ## 4. Indexers
 
-This repo includes three starter collectors:
+This repo includes six collectors:
 
 - Auth0 incremental logs collector
 - Prometheus collector for relayer and issuers
-- NEAR tracked-account transaction collector with final block checkpoints
+- NEAR transaction collector with final block checkpoints + derived FastAuth sign events
+- FastAuth public-key account linker (maps relayer public keys to discovered NEAR accounts)
+- Sponsored-account TVL snapshot collector
+- Dashboard KPI snapshot collector (writes transaction/account/relayer monitoring metrics)
 
 Crash-recovery behavior:
 
 - Auth0 ingestion is checkpointed transactionally with durable progress updates.
-- NEAR indexing backfills missed final block heights from last checkpoint and writes matching `near_transactions` rows for tracked accounts.
+- NEAR indexing backfills missed final block heights from last checkpoint, writes `near_transactions` rows for FastAuth contract transactions, derives `fastauth_sign_events`, and rebuilds relayer marts.
+- Public-key account linking is checkpointed incrementally on `fastauth_sign_events.id`.
 - Service counter metrics also persist *_delta samples to preserve aggregate counter growth across worker downtime.
 
 Primary mode: continuous backend worker (recommended):
@@ -118,10 +122,26 @@ Worker config:
 
 - INDEXER_POLL_INTERVAL_MS (default 30000)
 - NEAR_RPC_URL (normal endpoint for latest-final polling)
+- NEAR_RPC_FALLBACKS (optional comma-separated fallback endpoints for latest-final polling)
 - NEAR_ARCHIVAL_RPC_URL (archival endpoint for historical backfill)
-- NEAR_TRACKED_ACCOUNT_IDS (comma-separated account IDs, default `fast-auth.near`)
+- NEAR_ARCHIVAL_RPC_FALLBACKS (optional comma-separated fallback endpoints for historical backfill)
 - NEAR_BACKFILL_START_HEIGHT (optional first-run seed if no checkpoint exists)
 - NEAR_MAX_BLOCKS_PER_RUN (default 100)
+- FASTAUTH_CONTRACT_IDS (comma-separated FastAuth contract IDs used for sign-event derivation)
+- FASTAUTH_PUBLIC_KEY_ACCOUNTS_URL_TEMPLATE (optional URL template for account lookup by public key; supports `{publicKey}` token)
+- FASTAUTH_PUBLIC_KEY_ACCOUNTS_BATCH_SIZE (default 200)
+- FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS (default 30; only used before first account-link checkpoint)
+- TVL_RPC_URL (optional; defaults to NEAR_RPC_URL)
+- TVL_LOOKBACK_DAYS (default 30)
+- TVL_MAX_ACCOUNTS_PER_RUN (default 200)
+
+Relayer dashboard sourcing:
+
+- Relayer and relayer-dapp stats are sourced from backend-built marts (`relayers`, `relayer_dapps`) derived from indexed FastAuth sign events.
+- FastAuth transaction totals/failures and relayer activity windows are sourced from `fastauth_sign_events`.
+- Account totals/created/active windows are sourced from `fastauth_public_key_accounts`.
+- Relayer TVL is computed from latest `account_tvl_daily_snapshots` for sponsored accounts.
+- Relayer project owner labels are sourced from indexed relayer Prometheus samples when exposed.
 
 One-shot manual run:
 
@@ -198,6 +218,10 @@ Prisma models included:
 - auth0_logs
 - service_metrics_timeseries
 - near_transactions
+- fastauth_sign_events
+- relayers
+- relayer_dapps
+- account_tvl_daily_snapshots
 - indexer_checkpoints
 
 These are designed to align with the collection plan and can be expanded during KPI mart development.

@@ -42,6 +42,7 @@ model NearTransaction {
   blockHeight          BigInt?  @map("block_height")
   blockTimestamp       DateTime? @map("block_timestamp")
   signerAccountId      String?  @map("signer_account_id")
+  signerPublicKey      String?  @map("signer_public_key")
   receiverId           String?  @map("receiver_id")
   methodName           String?  @map("method_name")
   executionStatus      String?  @map("execution_status")
@@ -56,6 +57,117 @@ model NearTransaction {
   @@map("near_transactions")
 }
 
+model FastAuthSignEvent {
+  id                    BigInt   @id @default(autoincrement())
+  txHash                String   @map("tx_hash")
+  actionIndex           Int      @map("action_index")
+  blockHeight           BigInt   @map("block_height")
+  blockTimestamp        DateTime @map("block_timestamp")
+  relayerAccountId      String   @map("relayer_account_id")
+  relayerPublicKey      String?  @map("relayer_public_key")
+  fastAuthContractId    String   @map("fastauth_contract_id")
+  guardId               String?  @map("guard_id")
+  guardName             String?  @map("guard_name")
+  providerType          String   @map("provider_type")
+  algorithm             String?  @map("algorithm")
+  userSub               String?  @map("user_sub")
+  userKeyPath           String?  @map("user_key_path")
+  userDomainId          Int?     @map("user_domain_id")
+  userDerivedPublicKey  String?  @map("user_derived_public_key")
+  projectDappId         String?  @map("project_dapp_id")
+  sponsoredAccountId    String?  @map("sponsored_account_id")
+  sponsoredAccountHash  String?  @map("sponsored_account_hash")
+  verifyPayloadHash     String?  @map("verify_payload_hash")
+  signPayloadJson       Json?    @map("sign_payload_json")
+  executionStatus       String?  @map("execution_status")
+  failureReason         String?  @map("failure_reason")
+  gasBurnt              BigInt?  @map("gas_burnt")
+  attachedDepositYocto  String?  @map("attached_deposit_yocto")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([txHash, actionIndex])
+  @@index([blockTimestamp])
+  @@index([relayerAccountId, blockTimestamp])
+  @@index([relayerPublicKey, blockTimestamp])
+  @@index([userDerivedPublicKey, blockTimestamp])
+  @@index([projectDappId, blockTimestamp])
+  @@index([providerType, blockTimestamp])
+  @@map("fastauth_sign_events")
+}
+
+model FastAuthPublicKeyAccount {
+  id              BigInt   @id @default(autoincrement())
+  publicKey       String   @map("public_key")
+  accountId       String   @map("account_id")
+  keyPath         String?  @map("key_path")
+  predecessorId   String?  @map("predecessor_id")
+  domainId        Int?     @map("domain_id")
+  firstSeenAt     DateTime @map("first_seen_at")
+  lastSeenAt      DateTime @map("last_seen_at")
+  lastSourceEventId BigInt? @map("last_source_event_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([publicKey, accountId])
+  @@index([accountId])
+  @@index([keyPath])
+  @@index([lastSeenAt])
+  @@index([firstSeenAt])
+  @@map("fastauth_public_key_accounts")
+}
+
+model Relayer {
+  accountId                    String   @id @map("account_id")
+  firstSeenAt                  DateTime @map("first_seen_at")
+  lastSeenAt                   DateTime @map("last_seen_at")
+  totalSignTransactions        Int      @default(0) @map("total_sign_transactions")
+  totalGasBurnt                BigInt?  @map("total_gas_burnt")
+  totalSponsoredUniqueAccounts Int      @default(0) @map("total_sponsored_unique_accounts")
+  projectOwner                 String?  @map("project_owner")
+  providerMixJson              Json?    @map("provider_mix_json")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@index([lastSeenAt])
+  @@map("relayers")
+}
+
+model RelayerDapp {
+  id                           BigInt   @id @default(autoincrement())
+  relayerAccountId             String   @map("relayer_account_id")
+  dappContractId               String   @map("dapp_contract_id")
+  providerType                 String   @map("provider_type")
+  firstSeenAt                  DateTime @map("first_seen_at")
+  lastSeenAt                   DateTime @map("last_seen_at")
+  totalSignTransactions        Int      @default(0) @map("total_sign_transactions")
+  totalGasBurnt                BigInt?  @map("total_gas_burnt")
+  totalSponsoredUniqueAccounts Int      @default(0) @map("total_sponsored_unique_accounts")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@unique([relayerAccountId, dappContractId, providerType])
+  @@index([relayerAccountId, lastSeenAt])
+  @@index([dappContractId, lastSeenAt])
+  @@map("relayer_dapps")
+}
+
+model AccountTvlDailySnapshot {
+  id                     BigInt   @id @default(autoincrement())
+  accountId              String   @map("account_id")
+  snapshotDate           DateTime @map("snapshot_date")
+  totalUsd               Float?   @map("total_usd")
+  nativeNearBalanceYocto String?  @map("native_near_balance_yocto")
+  nativeNearLockedYocto  String?  @map("native_near_locked_yocto")
+  assets                 Json     @map("assets_json")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@unique([accountId, snapshotDate])
+  @@index([snapshotDate])
+  @@map("account_tvl_daily_snapshots")
+}
+
 model IndexerCheckpoint {
   key       String   @id
   value     String
@@ -63,4 +175,21 @@ model IndexerCheckpoint {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("indexer_checkpoints")
+}
+
+model Account {
+  accountId          String   @id @map("account_id")
+  accountType        String   @map("account_type")
+  firstSeenAt        DateTime @map("first_seen_at")
+  lastSeenAt         DateTime @map("last_seen_at")
+  publicKeyCount     Int      @default(0) @map("public_key_count")
+  firstSourceEventId BigInt?  @map("first_source_event_id")
+  lastSourceEventId  BigInt?  @map("last_source_event_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+  @@index([accountType])
+  @@map("accounts")
 }

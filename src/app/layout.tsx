@@ -1,22 +1,17 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Space_Grotesk } from "next/font/google";
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-});
-
-const cormorant = Cormorant_Garamond({
-  variable: "--font-cormorant",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "FastAuth Metrics Dashboard",
   description: "Private peersyst.org FastAuth analytics dashboard",
 };
+
+const fontVariables = {
+  "--font-sf":
+    '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", system-ui, sans-serif',
+  "--font-sf-mono":
+    '"SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+} as React.CSSProperties & Record<`--${string}`, string>;
 
 export default function RootLayout({
   children,
@@ -24,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${cormorant.variable}`}>
+    <html lang="en" style={fontVariables}>
       <body>{children}</body>
     </html>
   );

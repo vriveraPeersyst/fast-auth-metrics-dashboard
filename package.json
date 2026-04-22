@@ -13,7 +13,8 @@
     "indexers:run": "tsx src/scripts/run-indexers.ts",
     "indexers:worker": "tsx src/scripts/indexer-worker.ts",
     "indexers:trigger": "tsx src/scripts/trigger-indexers.ts",
-    "indexers:trigger:dry": "tsx src/scripts/trigger-indexers.ts --dry-run"
+    "indexers:trigger:dry": "tsx src/scripts/trigger-indexers.ts --dry-run",
+    "backfill:user-keys": "tsx src/scripts/backfill-user-derived-keys.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
