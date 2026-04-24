@@ -8,6 +8,15 @@
       "recordedAt": "2026-04-24T17:30:00.000Z",
       "completedUpTo": null,
       "status": "open"
+    },
+    {
+      "startHeight": 195017046,
+      "endHeight": 195430164,
+      "reason": "skip-forward to chain tip: public RPC pool had pruned chunks for blocks in this range (UNKNOWN_CHUNK errors). Requires archival-backed backfill.",
+      "recordedAt": "2026-04-24T18:29:06.609Z",
+      "completedUpTo": null,
+      "completedDownTo": null,
+      "status": "open"
     }
   ]
 }
