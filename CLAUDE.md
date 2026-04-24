@@ -26,9 +26,20 @@ pnpm indexers:worker           # Long-running poll loop (production mode)
 pnpm indexers:trigger          # Send signed HMAC POST to /api/indexers/run
 pnpm indexers:trigger:dry      # Preview the signed request without sending
 pnpm backfill:user-keys        # Backfill derived user public keys from historical sign events
+pnpm backfill:range            # Archival-RPC-backed backfill for a block range (gap-filler, one-shot)
+pnpm indexer:skip-forward      # Advance the NEAR checkpoint to current chain tip (destructive; requires --confirm)
 ```
 
 Additional maintenance scripts exist in `src/scripts/` (`inspect-db.ts`, `rebuild-marts.ts`, `wipe-db.ts`) without package.json aliases — run them directly with `pnpm tsx src/scripts/<name>.ts` when needed, and double-check the destructive ones before invoking.
+
+### Gap management
+
+`data/missing-block-ranges.json` is the source of truth for block ranges that were never indexed (pre-existing history, skip-forwards, etc.). Each entry has `startHeight`, `endHeight`, `completedUpTo` (resumable checkpoint), and `status: "open" | "closed"`.
+
+Two operational tools interact with this file:
+
+- `pnpm indexer:skip-forward` — **destructive**. Advances `near_last_scanned_height` to current chain tip and appends a new "open" range to the file covering the skipped blocks. Use when the live indexer is stuck on pruned chunks and we accept a recent-history hole. Dry-run by default; pass `--confirm` to mutate.
+- `pnpm backfill:range` — **additive**. Walks a range using a dedicated archival-RPC pool (separate from the live indexer's public pool). Idempotent via `skipDuplicates`. Supports `--range=START..END` for ad-hoc slices, or `--from-file [--entry=N]` to resume an open range from the JSON file. Updates `completedUpTo` per batch.
 
 There is no test runner configured — do not invent `pnpm test`.
 

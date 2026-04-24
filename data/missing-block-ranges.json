@@ -1,0 +1,13 @@
+{
+  "$schema": "missing-block-ranges/v1",
+  "ranges": [
+    {
+      "startHeight": 167140093,
+      "endHeight": 194869120,
+      "reason": "pre-existing historical gap: fast-auth.near contract created at 167140093; indexer was seeded at 194869121. No blocks in this range were ever fetched.",
+      "recordedAt": "2026-04-24T17:30:00.000Z",
+      "completedUpTo": null,
+      "status": "open"
+    }
+  ]
+}

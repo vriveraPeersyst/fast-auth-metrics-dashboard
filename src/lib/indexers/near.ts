@@ -19,7 +19,7 @@ const NEAR_CHUNK_CONCURRENCY = 6;
 const NEAR_BACKFILL_START_HEIGHT = 194_800_000;
 const NEAR_PROGRESS_LOG_EVERY_BLOCKS = 10;
 
-type NearBlockResponse = {
+export type NearBlockResponse = {
   result?: {
     header?: {
       height?: number;
@@ -32,13 +32,13 @@ type NearBlockResponse = {
   };
 };
 
-type NearChunkResponse = {
+export type NearChunkResponse = {
   result?: {
     transactions?: NearChunkTransaction[];
   };
 };
 
-type NearChunkTransaction = {
+export type NearChunkTransaction = {
   hash?: string;
   signer_id?: string;
   public_key?: string;
@@ -59,9 +59,9 @@ const CHECKPOINT_CHAIN_HEAD_HEIGHT = "near_chain_head_height";
 const CHECKPOINT_CHAIN_HEAD_HASH = "near_chain_head_hash";
 const CHECKPOINT_BACKFILL_START_ORIGIN = "near_backfill_start_origin";
 
-type FastAuthSignEventSeed = Prisma.FastAuthSignEventCreateManyInput;
+export type FastAuthSignEventSeed = Prisma.FastAuthSignEventCreateManyInput;
 
-async function runWithConcurrency<T>(
+export async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<void>,
@@ -101,7 +101,7 @@ async function runWithConcurrency<T>(
   }
 }
 
-function resolveFastAuthContractIds(): string[] {
+export function resolveFastAuthContractIds(): string[] {
   const raw = process.env.FASTAUTH_CONTRACT_IDS;
 
   if (!raw) {
@@ -122,7 +122,7 @@ function resolveFastAuthContractIds(): string[] {
   return [...new Set(parsed)];
 }
 
-function toDateFromNearNs(timestampNs: number | undefined): Date {
+export function toDateFromNearNs(timestampNs: number | undefined): Date {
   if (!timestampNs) {
     return new Date();
   }
@@ -152,7 +152,7 @@ async function fetchFinalBlock(rpcManager: NearRpcManager): Promise<NearBlockRes
   return rpcManager.request<NearBlockResponse>("block", { finality: "final" }, "final-block");
 }
 
-async function fetchBlockByHeight(
+export async function fetchBlockByHeight(
   rpcManager: NearRpcManager,
   height: number,
 ): Promise<NearBlockResponse> {
@@ -163,7 +163,7 @@ async function fetchBlockByHeight(
   );
 }
 
-async function fetchChunkByHash(
+export async function fetchChunkByHash(
   rpcManager: NearRpcManager,
   chunkHash: string,
 ): Promise<NearChunkResponse> {
@@ -174,7 +174,7 @@ async function fetchChunkByHash(
   );
 }
 
-function parseActionMetadata(actions: unknown[] | undefined): {
+export function parseActionMetadata(actions: unknown[] | undefined): {
   methodName: string | null;
   attachedDepositYocto: string | null;
 } {
@@ -304,7 +304,7 @@ function isLikelyNearAccountId(value: string): boolean {
   return /^[a-z0-9._-]+$/.test(normalized) && (normalized.includes(".") || normalized.endsWith("near"));
 }
 
-function normalizeNearPublicKey(value: string | undefined): string | null {
+export function normalizeNearPublicKey(value: string | undefined): string | null {
   if (!value || typeof value !== "string") {
     return null;
   }
@@ -488,7 +488,7 @@ function isFunctionCallAction(action: unknown): action is { FunctionCall: Record
   return Boolean(functionCall && typeof functionCall === "object" && !Array.isArray(functionCall));
 }
 
-function deriveFastAuthSignEventsFromTransaction(params: {
+export function deriveFastAuthSignEventsFromTransaction(params: {
   tx: NearChunkTransaction;
   blockHeight: number;
   blockTimestamp: number | undefined;
@@ -685,7 +685,7 @@ export async function rebuildRelayerMarts(prisma: PrismaClient): Promise<{ relay
   };
 }
 
-function toNullableBigInt(value: unknown): bigint | null {
+export function toNullableBigInt(value: unknown): bigint | null {
   if (typeof value === "bigint") {
     return value;
   }
@@ -705,7 +705,7 @@ function toNullableBigInt(value: unknown): bigint | null {
   return null;
 }
 
-function parseExecutionStatus(status: unknown): { executionStatus: string | null; failureReason: string | null } {
+export function parseExecutionStatus(status: unknown): { executionStatus: string | null; failureReason: string | null } {
   if (!status) {
     return {
       executionStatus: "included",
@@ -744,7 +744,7 @@ function parseExecutionStatus(status: unknown): { executionStatus: string | null
   };
 }
 
-function toTransactionPayload(tx: NearChunkTransaction): Prisma.InputJsonObject {
+export function toTransactionPayload(tx: NearChunkTransaction): Prisma.InputJsonObject {
   return {
     hash: tx.hash ?? null,
     signer_id: tx.signer_id ?? null,
@@ -754,7 +754,7 @@ function toTransactionPayload(tx: NearChunkTransaction): Prisma.InputJsonObject 
   };
 }
 
-async function persistNearBlock(
+export async function persistNearBlock(
   prisma: PrismaClient,
   blockHeight: number,
   blockHash: string,

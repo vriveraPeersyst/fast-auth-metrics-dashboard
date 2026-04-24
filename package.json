@@ -14,7 +14,9 @@
     "indexers:worker": "tsx src/scripts/indexer-worker.ts",
     "indexers:trigger": "tsx src/scripts/trigger-indexers.ts",
     "indexers:trigger:dry": "tsx src/scripts/trigger-indexers.ts --dry-run",
-    "backfill:user-keys": "tsx src/scripts/backfill-user-derived-keys.ts"
+    "backfill:user-keys": "tsx src/scripts/backfill-user-derived-keys.ts",
+    "backfill:range": "tsx src/scripts/backfill-range.ts",
+    "indexer:skip-forward": "tsx src/scripts/skip-forward.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
