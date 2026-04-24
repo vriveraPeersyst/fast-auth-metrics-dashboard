@@ -34,12 +34,15 @@ Additional maintenance scripts exist in `src/scripts/` (`inspect-db.ts`, `rebuil
 
 ### Gap management
 
-`data/missing-block-ranges.json` is the source of truth for block ranges that were never indexed (pre-existing history, skip-forwards, etc.). Each entry has `startHeight`, `endHeight`, `completedUpTo` (resumable checkpoint), and `status: "open" | "closed"`.
+The `missing_block_ranges` table is the source of truth for block ranges that were never indexed (pre-existing history, skip-forwards, etc.). Each row has `startHeight`, `endHeight`, `completedUpTo` / `completedDownTo` (resumable checkpoints for asc/desc walks), and `status: "open" | "closed"`. The dashboard renders this table in the System status section.
 
-Two operational tools interact with this file:
+Three operational tools interact with it:
 
-- `pnpm indexer:skip-forward` — **destructive**. Advances `near_last_scanned_height` to current chain tip and appends a new "open" range to the file covering the skipped blocks. Use when the live indexer is stuck on pruned chunks and we accept a recent-history hole. Dry-run by default; pass `--confirm` to mutate.
-- `pnpm backfill:range` — **additive**. Walks a range using a dedicated archival-RPC pool (separate from the live indexer's public pool). Idempotent via `skipDuplicates`. Supports `--range=START..END` for ad-hoc slices, or `--from-file [--entry=N]` to resume an open range from the JSON file. Updates `completedUpTo` per batch.
+- `pnpm indexer:skip-forward` — **destructive**. Advances `near_last_scanned_height` to current chain tip and inserts a new "open" row into `missing_block_ranges` covering the skipped blocks. Use when the live indexer is stuck on pruned chunks and we accept a recent-history hole. Dry-run by default; pass `--confirm` to mutate.
+- `pnpm backfill:range` — **additive**. Walks a range using a dedicated archival-RPC pool (separate from the live indexer's public pool). Idempotent via `skipDuplicates`. Supports `--range=START..END` for ad-hoc slices, or `--id=N` (or first open row by default) to resume a `missing_block_ranges` row. Updates the row's checkpoint per batch and marks it `closed` when done. Use `--direction=desc` to walk a range high→low (most recent blocks heal first; most useful for skip-forward gaps).
+- `pnpm seed:missing-ranges` — **one-shot migration helper**. Reads any pre-DB `data/missing-block-ranges.json` file and upserts entries into `missing_block_ranges`. Skips rows that already exist. After running this, the JSON file can be deleted.
+
+Historical note: ranges used to live in `data/missing-block-ranges.json`. They were migrated to the DB so progress updates from the backfill service are visible to the dashboard service without a redeploy.
 
 There is no test runner configured — do not invent `pnpm test`.
 

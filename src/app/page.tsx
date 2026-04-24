@@ -320,6 +320,98 @@ export default async function Home() {
         </article>
       </section>
 
+      <article className="healthCard" style={{ marginBottom: "1.5rem" }}>
+        <div className="healthCardHeader">
+          <h3>Missing block ranges</h3>
+          <span
+            className={`healthBadge healthBadge--${
+              data.missingBlockRanges.every((r) => r.status === "closed")
+                ? "healthy"
+                : "lagging"
+            }`}
+          >
+            {data.missingBlockRanges.filter((r) => r.status === "open").length} open
+          </span>
+        </div>
+        {data.missingBlockRanges.length === 0 ? (
+          <p className="emptyState">No recorded gaps. Indexer history is contiguous.</p>
+        ) : (
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Range</th>
+                  <th>Size</th>
+                  <th>Processed</th>
+                  <th>Pending</th>
+                  <th>Asc cursor</th>
+                  <th>Desc cursor</th>
+                  <th>Status</th>
+                  <th>Recorded</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.missingBlockRanges.map((range) => {
+                  const pctProcessed =
+                    range.size > 0
+                      ? Math.round((range.blocksProcessed / range.size) * 100)
+                      : 0;
+                  return (
+                    <tr key={`${range.startHeight}-${range.endHeight}`}>
+                      <td>
+                        <NearblocksLink kind="block" value={String(range.startHeight)} />
+                        {" – "}
+                        <NearblocksLink kind="block" value={String(range.endHeight)} />
+                      </td>
+                      <td>{range.size.toLocaleString()}</td>
+                      <td>
+                        {range.blocksProcessed.toLocaleString()}
+                        {" "}
+                        <span className="healthMetaHint">({pctProcessed}%)</span>
+                      </td>
+                      <td>{range.blocksPending.toLocaleString()}</td>
+                      <td>
+                        {range.completedUpTo !== null ? (
+                          <NearblocksLink kind="block" value={String(range.completedUpTo)} />
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td>
+                        {range.completedDownTo !== null ? (
+                          <NearblocksLink kind="block" value={String(range.completedDownTo)} />
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={`healthBadge healthBadge--${
+                            range.status === "closed" ? "healthy" : "lagging"
+                          }`}
+                        >
+                          {range.status}
+                        </span>
+                      </td>
+                      <td>
+                        <LocalTime iso={range.recordedAt || null} />
+                      </td>
+                      <td>{range.reason}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="healthDetails">
+          Block ranges that are not yet indexed. Source of truth is{" "}
+          <code>data/missing-block-ranges.json</code>. Closed ranges are filled; open ranges still
+          need an archival-backed backfill (<code>pnpm backfill:range</code>).
+        </p>
+      </article>
+
       <p className="sectionKicker">Overview</p>
       <section className="metricsGrid">
         <MetricTabs

@@ -1,0 +1,218 @@
+(base) vrcasadella@Victors-MacBook-Air fast-auth-metrics-dashboard % railway link
+> Select a workspace Victor Rivera's Projects
+> Select a project fast-auth-analytics
+> Select an environment production
+> Select a service <esc to skip> fast-auth-backfill
+
+Project fast-auth-analytics linked successfully! 🎉
+(base) vrcasadella@Victors-MacBook-Air fast-auth-metrics-dashboard % railway up
+  Indexed                                                                                                                                                                                                         
+  Compressed [====================] 100%                                                                                                                                                                          
+  Uploaded                                                                                                                                                                                                          Build Logs: https://railway.com/project/c3c0411d-1481-43a9-b0f3-3defba7f56d5/service/984827a6-94a5-4cb6-8013-827346d0c6f5?id=e3c6022d-776b-49c8-9ef6-2309ffe49d6e&
+scheduling build on Metal builder "builder-hklray"
+fetched snapshot sha256:c2b6c2ffec9f15e72a7eeb477cc57170f0ad53de4ee20f6ef11122080fb06c11 (4.3 MB bytes)
+fetching snapshot
+using build driver railpack-v0.23.0
+                   
+  ↳ Detected Node
+  ↳ Using pnpm package manager
+  ↳ Installing pnpm@10.29.3 with Corepack
+  ──────────
+  node  │  22.22.2  │  railpack default (22)
+  pnpm  │  10.29.3  │  package.json > packageManager (10.29.3)
+  ──────────
+  ▸ install
+         
+    $ pnpm run build
+            
+    $ pnpm backfill:range --from-file --entry=1 --direction=desc
+
+resolve image config for docker-image://ghcr.io/railwayapp/railpack-frontend:v0.23.0
+docker-image://ghcr.io/railwayapp/railpack-frontend:v0.23.0@sha256:ba4c430961d9ee3215c64807727a4b11e2198daac31250e9db9eaf9cee4624d6
+docker-image://ghcr.io/railwayapp/railpack-frontend:v0.23.0@sha256:ba4c430961d9ee3215c64807727a4b11e2198daac31250e9db9eaf9cee4624d6
+docker-image://ghcr.io/railwayapp/railpack-frontend:v0.23.0@sha256:ba4c430961d9ee3215c64807727a4b11e2198daac31250e9db9eaf9cee4624d6
+load build definition from ./railpack-plan.json
+copy docs/package.json
+copy /root/.local/state/mise
+create mise config
+copy /mise/shims
+[railpack] secrets hash
+copy / /app
+copy pnpm-lock.yaml
+copy package.json
+[railpack] secrets hash
+loading .
+loading .
+mkdir /etc/mise
+create mise config
+copy package.json
+npm i -g corepack@latest && corepack enable && corepack prepare --activate
+copy docs/package.json
+copy package.json
+copy / /app
+pnpm run build
+
+> fast-auth-metrics-dashboard@0.1.0 build /app
+> next build
+
+
+
+  Creating an optimized production build ...
+
+  Running TypeScript ...
+
+  Finished TypeScript in 5.9s ...
+
+  Generating static pages using 7 workers (3/5) 
+
+✓ Generating static pages using 7 workers (5/5) in 871ms
+
+pnpm run build
+copy /root/.cache
+copy /mise/installs
+copy /usr/local/bin/mise
+copy /etc/mise/config.toml
+copy /root/.local/state/mise
+install apt packages: libatomic1
+install apt packages: libatomic1
+copy /app
+copy /app/node_modules
+[railpack] merge $packages:apt:runtime, $packages:mise, $build, $build
+[railpack] merge $packages:apt:runtime, $packages:mise, $build, $build
+exporting to docker image format
+exporting to docker image format
+containerimage.descriptor: eyJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQub2NpLmltYWdlLm1hbmlmZXN0LnYxK2pzb24iLCJkaWdlc3QiOiJzaGEyNTY6NmQ0ZWM5ZWM5YjQyMGUyMjRhZGVkNWUyY2JhMjIwZTliYmY3NDc2NzA3NzgwNzJhN2VlMzJmMWZiMTE0Zjc2YiIsInNpemUiOjI1ODYsImFubm90YXRpb25zIjp7Im9yZy5vcGVuY29udGFpbmVycy5pbWFnZS5jcmVhdGVkIjoiMjAyNi0wNC0yNFQxODo0NTo1NFoifSwicGxhdGZvcm0iOnsiYXJjaGl0ZWN0dXJlIjoiYW1kNjQiLCJvcyI6ImxpbnV4In19
+containerimage.digest: sha256:6d4ec9ec9b420e224aded5e2cba220e9bbf747670778072a7ee32f1fb114f76b
+Deploy complete
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+dry run:            false
+
+> fast-auth-metrics-dashboard@0.1.0 backfill:range /app
+
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+=== backfill-range ===
+range:              195017046..195430164
+walk:               195430164 → 195017046  (413119 blocks)
+batch size:         50
+block concurrency:  10
+Starting Container
+    at async Promise.all (index 3) {
+}
+NearRpcExhaustedError: NEAR chunk-by-hash AUs7h6CzQY4xURNbuNEcD5DEbQ2bAgM152hunwJdxuXE request failed (429) via https://archival-rpc.mainnet.fastnear.com: {"jsonrpc": "2.0", "error": {"code": -429, "message": "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com"}, "id": "1"}
+    at async <anonymous> (/app/src/lib/indexers/near.ts:87:9)
+    at async Promise.all (index 0)
+    at async runWithConcurrency (/app/src/lib/indexers/near.ts:97:3)
+ ELIFECYCLE  Command failed with exit code 1.
+
+dry run:            false
+
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+range:              195017046..195430164
+direction:          desc
+walk:               195430164 → 195017046  (413119 blocks)
+batch size:         50
+block concurrency:  10
+chunk concurrency:  5
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+  totalAttempts: 3
+    at NearRpcManager.request (/app/src/lib/indexers/near-rpc-manager.ts:309:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async processBlock (/app/src/scripts/backfill-range.ts:173:20)
+    at async <anonymous> (/app/src/scripts/backfill-range.ts:308:19)
+    at async <anonymous> (/app/src/lib/indexers/near.ts:87:9)
+    at async runWithConcurrency (/app/src/lib/indexers/near.ts:97:3)
+    at async backfillRange (/app/src/scripts/backfill-range.ts:307:5)
+    at async main (/app/src/scripts/backfill-range.ts:427:60) {
+  unknownBlockEndpoints: Set(0) {},
+  healthyEndpointCount: 1,
+> tsx src/scripts/backfill-range.ts --from-file --entry=1 --direction=desc
+
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+direction:          desc
+walk:               195430164 → 195017046  (413119 blocks)
+batch size:         50
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+dry run:            false
+    at async <anonymous> (/app/src/scripts/backfill-range.ts:308:19)
+    at async backfillRange (/app/src/scripts/backfill-range.ts:307:5)
+    at async main (/app/src/scripts/backfill-range.ts:427:60) {
+}
+    at async runWithConcurrency (/app/src/lib/indexers/near.ts:97:3)
+ ELIFECYCLE  Command failed with exit code 1.
+
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+=== backfill-range ===
+range:              195017046..195430164
+direction:          desc
+walk:               195430164 → 195017046  (413119 blocks)
+block concurrency:  10
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+
+NearRpcExhaustedError: NEAR block-by-height 195430160 request failed (429) via https://archival-rpc.mainnet.fastnear.com: {"jsonrpc": "2.0", "error": {"code": -429, "message": "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com"}, "id": "1"}
+    at NearRpcManager.request (/app/src/lib/indexers/near-rpc-manager.ts:309:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async processBlock (/app/src/scripts/backfill-range.ts:173:20)
+    at async <anonymous> (/app/src/scripts/backfill-range.ts:308:19)
+    at async <anonymous> (/app/src/lib/indexers/near.ts:87:9)
+    at async Promise.all (index 4)
+    at async backfillRange (/app/src/scripts/backfill-range.ts:307:5)
+    at async main (/app/src/scripts/backfill-range.ts:427:60) {
+  unknownBlockEndpoints: Set(0) {},
+  healthyEndpointCount: 1,
+  totalAttempts: 3
+}
+ ELIFECYCLE  Command failed with exit code 1.
+
+> fast-auth-metrics-dashboard@0.1.0 backfill:range /app
+> tsx src/scripts/backfill-range.ts --from-file --entry=1 --direction=desc
+
+=== backfill-range ===
+range:              195017046..195430164
+direction:          desc
+walk:               195430164 → 195017046  (413119 blocks)
+block concurrency:  10
+chunk concurrency:  5
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+NearRpcExhaustedError: NEAR block-by-height 195430164 request failed (429) via https://archival-rpc.mainnet.fastnear.com: {"jsonrpc": "2.0", "error": {"code": -429, "message": "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com"}, "id": "1"}
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async processBlock (/app/src/scripts/backfill-range.ts:173:20)
+    at async Promise.all (index 0)
+    at async runWithConcurrency (/app/src/lib/indexers/near.ts:97:3)
+  unknownBlockEndpoints: Set(0) {},
+ ELIFECYCLE  Command failed with exit code 1.
+
+> fast-auth-metrics-dashboard@0.1.0 backfill:range /app
+> tsx src/scripts/backfill-range.ts --from-file --entry=1 --direction=desc
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+=== backfill-range ===
+batch size:         50
+block concurrency:  10
+archival pool:      https://archival-rpc.mainnet.fastnear.com
+dry run:            false
+image push
+image push
+    at NearRpcManager.request (/app/src/lib/indexers/near-rpc-manager.ts:309:11)
+}
+Using entry 1: 195017046..195430164 (direction=desc, walk 195430164 → 195017046)
+range:              195017046..195430164
+walk:               195430164 → 195017046  (413119 blocks)
+chunk concurrency:  5
+
+    at async backfillRange (/app/src/scripts/backfill-range.ts:307:5)
+NearRpcExhaustedError: NEAR block-by-height 195430157 request failed (429) via https://archival-rpc.mainnet.fastnear.com: {"jsonrpc": "2.0", "error": {"code": -429, "message": "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com"}, "id": "1"}
+    at async <anonymous> (/app/src/scripts/backfill-range.ts:308:19)
+    at async Promise.all (index 7)
+> fast-auth-metrics-dashboard@0.1.0 backfill:range /app
+
+direction:          desc
+block concurrency:  10
+chunk concurrency:  5
+    at async Promise.all (index 4)
+    at async backfillRange (/app/src/scripts/backfill-range.ts:307:5)
+    at async main (/app/src/scripts/backfill-range.ts:427:60) {
+  unknownBlockEndpoints: Set(0) {},
+  healthyEndpointCount: 1,
+  totalAttempts: 3
+}
+> tsx src/scripts/backfill-range.ts --from-file --entry=1 --direction=desc
+Deploy crashed

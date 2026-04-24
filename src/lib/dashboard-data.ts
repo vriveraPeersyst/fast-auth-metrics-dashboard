@@ -109,6 +109,19 @@ type IndexerLag = {
   lastScannedCheckpointAt: Date | null;
 };
 
+type MissingBlockRange = {
+  startHeight: number;
+  endHeight: number;
+  size: number;
+  blocksProcessed: number;
+  blocksPending: number;
+  status: "open" | "closed";
+  reason: string;
+  recordedAt: string;
+  completedUpTo: number | null;
+  completedDownTo: number | null;
+};
+
 type FastAuthChainHealth = {
   computedAt: Date;
   chainHead: string;
@@ -131,6 +144,7 @@ type DashboardData = {
   latestNearFinalBlock: string | null;
   indexerLag: IndexerLag;
   fastAuthChainHealth: FastAuthChainHealth | null;
+  missingBlockRanges: MissingBlockRange[];
   collectorHealth: CollectorHealth[];
   relayerBreakdown: RelayerBreakdownItem[];
   recentNearTransactions: RecentNearTransaction[];
@@ -145,6 +159,50 @@ const MAX_UNIQUE_SPONSORED_ACCOUNTS_TO_DISPLAY = 12;
 const MAX_RECENT_NEAR_TRANSACTIONS = 8;
 const MAX_RECENT_SIGN_EVENTS = 12;
 const MAX_PUBLIC_KEY_ACCOUNTS = 12;
+
+async function loadMissingBlockRanges(): Promise<MissingBlockRange[]> {
+  let rows: Awaited<ReturnType<typeof prisma.missingBlockRange.findMany>>;
+  try {
+    rows = await prisma.missingBlockRange.findMany({ orderBy: { startHeight: "asc" } });
+  } catch (error) {
+    // Table may not yet exist (e.g. dashboard built before the migration is
+    // applied) — render an empty list rather than crashing the entire page.
+    if (error && typeof error === "object" && "code" in error && error.code === "P2021") {
+      return [];
+    }
+    throw error;
+  }
+  return rows.map((r) => {
+    const startHeight = Number(r.startHeight);
+    const endHeight = Number(r.endHeight);
+    const completedUpTo = r.completedUpTo != null ? Number(r.completedUpTo) : null;
+    const completedDownTo = r.completedDownTo != null ? Number(r.completedDownTo) : null;
+    const size = endHeight - startHeight + 1;
+    const ascDone =
+      completedUpTo != null && completedUpTo >= startHeight
+        ? Math.min(completedUpTo, endHeight) - startHeight + 1
+        : 0;
+    const descDone =
+      completedDownTo != null && completedDownTo <= endHeight
+        ? endHeight - Math.max(completedDownTo, startHeight) + 1
+        : 0;
+    // Asc and desc grow toward each other; cap the sum at the range size to
+    // avoid double-counting if the two cursors ever cross.
+    const blocksProcessed = Math.min(size, ascDone + descDone);
+    return {
+      startHeight,
+      endHeight,
+      size,
+      blocksProcessed,
+      blocksPending: size - blocksProcessed,
+      status: r.status === "closed" ? "closed" : "open",
+      reason: r.reason,
+      recordedAt: r.recordedAt.toISOString(),
+      completedUpTo,
+      completedDownTo,
+    };
+  });
+}
 
 function tryParseBigInt(value: string | null | undefined): bigint | null {
   if (!value) {
@@ -556,6 +614,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     latestNearFinalBlock: nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null,
     indexerLag,
     fastAuthChainHealth,
+    missingBlockRanges: await loadMissingBlockRanges(),
     collectorHealth,
     relayerBreakdown,
     recentNearTransactions,

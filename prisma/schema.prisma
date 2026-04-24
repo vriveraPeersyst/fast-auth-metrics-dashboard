@@ -195,6 +195,23 @@ model FastAuthChainHealthSnapshot {
   @@map("fastauth_chain_health_snapshots")
 }
 
+model MissingBlockRange {
+  id              BigInt   @id @default(autoincrement())
+  startHeight     BigInt   @map("start_height")
+  endHeight       BigInt   @map("end_height")
+  reason          String
+  status          String   @default("open")
+  completedUpTo   BigInt?  @map("completed_up_to")
+  completedDownTo BigInt?  @map("completed_down_to")
+  recordedAt      DateTime @map("recorded_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([startHeight, endHeight])
+  @@index([status])
+  @@map("missing_block_ranges")
+}
+
 model Account {
   accountId          String   @id @map("account_id")
   accountType        String   @map("account_type")

@@ -1,8 +1,5 @@
 import "dotenv/config";
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import type { Prisma } from "@prisma/client";
 
 import {
@@ -29,56 +26,33 @@ import { prisma } from "@/lib/prisma";
 // Archival-only pool used by this script. Intentionally separate from the
 // live indexer's `NEAR_RPC_URLS` — archival endpoints have stricter rate
 // limits and would destabilise the tip-follower if mixed into that pool.
-//
-// Only FastNEAR archival is used. Benchmark (2026-04-24): sustained 100% at
-// c=40 with p50 194ms, ~62 RPS ceiling. `archival-rpc.mainnet.near.org` was
-// excluded after measuring its documented 4 RPM / 10 per 10min limit in
-// practice (0% success at c=5 after any sustained load). Adding near.org
-// as a failover partner is worse than useless: when FastNEAR blips and the
-// rotation lands on near.org, near.org 429s for 30+ minutes and blacklists,
-// dragging the script to a halt.
 const ARCHIVAL_NEAR_RPC_URLS = [
   "https://archival-rpc.mainnet.fastnear.com",
 ];
 
-// Concurrency tuned for FastNEAR archival's measured capacity. 10 × 5 = 50
-// peak concurrent calls; in practice averages ~40-50 RPS = ~7 blocks/sec,
-// giving ~16h end-to-end for a 408k-block gap.
+// Concurrency tuned for FastNEAR archival's measured capacity. With a
+// FASTNEAR_API_KEY the rate limit is higher; without one, drop to
+// `--block-concurrency=1 --chunk-concurrency=5` to stay within the free tier.
 const DEFAULT_BLOCK_CONCURRENCY = 10;
 const DEFAULT_CHUNK_CONCURRENCY = 5;
-// Batch size controls only how often `completedUpTo` is persisted to the JSON
-// file — blocks themselves are written to DB as they complete. On crash we
-// re-RPC up to `batch-size` blocks before the no-op upserts kick in, so smaller
-// is cheaper on recovery. 50 ≈ a few seconds of re-work max; file writes are
-// trivial (<1ms each).
+// Batch size controls only how often the row's `completedUpTo` /
+// `completedDownTo` cursor is persisted to `missing_block_ranges`. Blocks
+// themselves are written to `near_transactions` / `fastauth_sign_events` as
+// they complete. On crash we re-RPC up to `batch-size` blocks before the
+// no-op upserts kick in, so smaller is cheaper on recovery.
 const DEFAULT_BATCH_SIZE = 50;
 
-const MISSING_RANGES_FILE = resolve(process.cwd(), "data/missing-block-ranges.json");
-
-type MissingRange = {
-  startHeight: number;
-  endHeight: number;
-  reason: string;
-  recordedAt: string;
-  // Ascending checkpoint — highest height already processed when walking asc.
-  completedUpTo: number | null;
-  // Descending checkpoint — lowest height already processed when walking desc.
-  // Tracked independently so asc/desc can be combined if needed.
-  completedDownTo?: number | null;
-  status: "open" | "closed";
-};
-
-type MissingRangesFile = {
-  $schema?: string;
-  ranges: MissingRange[];
-};
+// Rate-limit retry: when FastNEAR throws -429, sleep then retry. Lets the
+// script ride out sustained rate-limit windows instead of crashing.
+const RATE_LIMIT_RETRY_SLEEP_MS = 30_000;
+const RATE_LIMIT_MAX_RETRIES = 20;
 
 type Cli = {
-  mode: "range" | "file";
+  source: "range" | "row";
   direction: "asc" | "desc";
   rangeStart?: number;
   rangeEnd?: number;
-  entryIndex?: number;
+  rowId?: number;
   batchSize: number;
   blockConcurrency: number;
   chunkConcurrency: number;
@@ -88,7 +62,8 @@ type Cli = {
 function parseCli(): Cli {
   const args = process.argv.slice(2);
   const cli: Cli = {
-    mode: "range",
+    // Default: pick the first open row from missing_block_ranges.
+    source: "row",
     direction: "asc",
     batchSize: DEFAULT_BATCH_SIZE,
     blockConcurrency: DEFAULT_BLOCK_CONCURRENCY,
@@ -97,8 +72,15 @@ function parseCli(): Cli {
   };
 
   for (const arg of args) {
-    if (arg === "--from-file") {
-      cli.mode = "file";
+    // pnpm v10 may forward a bare `--` through to the script when invoked
+    // via `pnpm backfill:range -- ...`. Ignore it.
+    if (arg === "--") {
+      continue;
+    }
+    if (arg === "--from-file" || arg === "--from-db") {
+      // Both kept for backwards compatibility with existing Railway start
+      // commands. `--from-file` is a misnomer post-DB-migration but harmless.
+      cli.source = "row";
     } else if (arg === "--dry-run") {
       cli.dryRun = true;
     } else if (arg === "--direction=asc") {
@@ -112,14 +94,21 @@ function parseCli(): Cli {
       if (!Number.isInteger(s) || !Number.isInteger(e) || s > e) {
         throw new Error(`--range must be START..END with START <= END (got ${arg}).`);
       }
+      cli.source = "range";
       cli.rangeStart = s;
       cli.rangeEnd = e;
-    } else if (arg.startsWith("--entry=")) {
-      const idx = Number(arg.slice("--entry=".length));
-      if (!Number.isInteger(idx) || idx < 0) {
-        throw new Error(`--entry must be a non-negative integer (got ${arg}).`);
+    } else if (arg.startsWith("--id=") || arg.startsWith("--entry=")) {
+      // `--entry=N` (legacy, was JSON array index) is accepted as an alias
+      // for `--id=N` so old Railway start commands keep working — note that
+      // the semantics changed: it is now the missing_block_ranges row id,
+      // not an array index.
+      const flag = arg.startsWith("--id=") ? "--id=" : "--entry=";
+      const id = Number(arg.slice(flag.length));
+      if (!Number.isInteger(id) || id < 0) {
+        throw new Error(`${flag} must be a non-negative integer (got ${arg}).`);
       }
-      cli.entryIndex = idx;
+      cli.source = "row";
+      cli.rowId = id;
     } else if (arg.startsWith("--batch-size=")) {
       const v = Number(arg.slice("--batch-size=".length));
       if (!Number.isInteger(v) || v < 1) throw new Error(`--batch-size must be >= 1.`);
@@ -137,24 +126,41 @@ function parseCli(): Cli {
     }
   }
 
-  if (cli.mode === "range" && (cli.rangeStart === undefined || cli.rangeEnd === undefined)) {
-    throw new Error("--range=START..END is required unless --from-file is provided.");
-  }
-
   return cli;
 }
 
-function readRangesFile(): MissingRangesFile {
-  const raw = readFileSync(MISSING_RANGES_FILE, "utf8");
-  const parsed = JSON.parse(raw) as MissingRangesFile;
-  if (!Array.isArray(parsed.ranges)) {
-    throw new Error("data/missing-block-ranges.json: missing `ranges` array.");
-  }
-  return parsed;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function writeRangesFile(data: MissingRangesFile): void {
-  writeFileSync(MISSING_RANGES_FILE, JSON.stringify(data, null, 2) + "\n", "utf8");
+function isRateLimitError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("rate limits exceeded") ||
+    msg.includes("too many requests") ||
+    msg.includes("(429)") ||
+    msg.includes('"code":-429') ||
+    msg.includes('"code": -429')
+  );
+}
+
+async function withRateLimitRetry<T>(fn: () => Promise<T>, context: string): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isRateLimitError(err)) throw err;
+      lastError = err;
+      if (attempt === RATE_LIMIT_MAX_RETRIES) break;
+      console.log(
+        `  [rate-limited] ${context}: sleeping ${RATE_LIMIT_RETRY_SLEEP_MS / 1000}s (attempt ${attempt + 1}/${RATE_LIMIT_MAX_RETRIES})`,
+      );
+      await sleep(RATE_LIMIT_RETRY_SLEEP_MS);
+    }
+  }
+  throw lastError ?? new Error(`Rate-limit retries exhausted for ${context}`);
 }
 
 async function processBlock(
@@ -168,8 +174,6 @@ async function processBlock(
     blockPayload = await fetchBlockByHeight(rpcManager, height);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // For archival backfill, any exhausted-retry UNKNOWN_BLOCK is treated as a
-    // genuinely missed slot (archival wouldn't prune). We still log it.
     if (
       (message.includes("UNKNOWN_BLOCK") || message.includes("Unknown block") || message.includes("DB Not Found")) &&
       message.includes("block-by-height")
@@ -268,7 +272,7 @@ async function backfillRange(
   walkFrom: number,
   walkTo: number,
   totalBlocks: number,
-  onBatchComplete: (completedHeight: number) => void,
+  onBatchComplete: (completedHeight: number) => Promise<void>,
 ): Promise<{ totalInserted: number; totalSignEvents: number; totalSkipped: number }> {
   const fastAuthContractSet = new Set(resolveFastAuthContractIds());
   let totalInserted = 0;
@@ -277,8 +281,6 @@ async function backfillRange(
   const startedAt = Date.now();
 
   let cursor = walkFrom;
-  // Ascending: cursor moves walkFrom → walkTo, walkFrom <= walkTo.
-  // Descending: cursor moves walkFrom → walkTo, walkFrom >= walkTo.
   const done = () =>
     cli.direction === "asc" ? cursor > walkTo : cursor < walkTo;
 
@@ -300,7 +302,10 @@ async function backfillRange(
     let batchSkipped = 0;
 
     await runWithConcurrency(heights, cli.blockConcurrency, async (height) => {
-      const res = await processBlock(rpcManager, height, fastAuthContractSet, cli.chunkConcurrency);
+      const res = await withRateLimitRetry(
+        () => processBlock(rpcManager, height, fastAuthContractSet, cli.chunkConcurrency),
+        `block ${height}`,
+      );
       batchInserted += res.inserted;
       batchSignEvents += res.signEvents;
       if (res.skipped) batchSkipped += 1;
@@ -310,9 +315,7 @@ async function backfillRange(
     totalSignEvents += batchSignEvents;
     totalSkipped += batchSkipped;
 
-    // Checkpoint boundary = the batch's outer edge. For asc that's the
-    // highest height just processed; for desc, the lowest.
-    onBatchComplete(batchEnd);
+    await onBatchComplete(batchEnd);
 
     const elapsedS = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
     const processedBlocks =
@@ -335,45 +338,63 @@ async function backfillRange(
 
 async function main(): Promise<void> {
   const cli = parseCli();
-  const rpcManager = new NearRpcManager(ARCHIVAL_NEAR_RPC_URLS);
+  const fastnearApiKey = process.env.FASTNEAR_API_KEY?.trim() || null;
+  const rpcManager = new NearRpcManager(ARCHIVAL_NEAR_RPC_URLS, {
+    bearerToken: fastnearApiKey,
+  });
+  if (fastnearApiKey) {
+    console.log("Using FASTNEAR_API_KEY (Authorization: Bearer ***)");
+  } else {
+    console.log("No FASTNEAR_API_KEY set — using free-tier limits (very low credit budget)");
+  }
 
-  let entryIndex: number | null = null;
+  // Resolve which range to walk. Two modes:
+  //   - row    : pick a `missing_block_ranges` row by id, or first open one
+  //   - range  : ad-hoc start..end, no DB row association (no checkpointing)
+  let rowId: bigint | null = null;
   let rangeStart: number;
   let rangeEnd: number;
-  // walkFrom / walkTo = the inclusive bounds in traversal order.
-  // asc: walkFrom <= walkTo (low → high)
-  // desc: walkFrom >= walkTo (high → low)
   let walkFrom: number;
   let walkTo: number;
 
-  if (cli.mode === "file") {
-    const file = readRangesFile();
-    const idx = cli.entryIndex ?? file.ranges.findIndex((r) => r.status === "open");
-    if (idx < 0 || idx >= file.ranges.length) {
-      throw new Error(
-        `No entry at index ${idx}. File has ${file.ranges.length} ranges.`,
-      );
-    }
-    const entry = file.ranges[idx];
-    if (entry.status === "closed") {
-      console.log(`Entry ${idx} is already closed. Nothing to do.`);
+  if (cli.source === "row") {
+    const dbRow =
+      cli.rowId != null
+        ? await prisma.missingBlockRange.findUnique({ where: { id: BigInt(cli.rowId) } })
+        : await prisma.missingBlockRange.findFirst({
+            where: { status: "open" },
+            orderBy: { id: "asc" },
+          });
+
+    if (!dbRow) {
+      if (cli.rowId != null) {
+        console.error(`No missing_block_ranges row found with id=${cli.rowId}.`);
+      } else {
+        console.log('No open rows in missing_block_ranges. Nothing to do.');
+      }
       return;
     }
-    entryIndex = idx;
-    rangeStart = entry.startHeight;
-    rangeEnd = entry.endHeight;
+
+    if (dbRow.status === "closed") {
+      console.log(`Row id=${dbRow.id} is already closed. Nothing to do.`);
+      return;
+    }
+
+    rowId = dbRow.id;
+    rangeStart = Number(dbRow.startHeight);
+    rangeEnd = Number(dbRow.endHeight);
 
     if (cli.direction === "asc") {
-      walkFrom = entry.completedUpTo !== null ? entry.completedUpTo + 1 : rangeStart;
+      walkFrom = dbRow.completedUpTo != null ? Number(dbRow.completedUpTo) + 1 : rangeStart;
       walkTo = rangeEnd;
     } else {
       walkFrom =
-        entry.completedDownTo != null ? entry.completedDownTo - 1 : rangeEnd;
+        dbRow.completedDownTo != null ? Number(dbRow.completedDownTo) - 1 : rangeEnd;
       walkTo = rangeStart;
     }
 
     console.log(
-      `Using entry ${idx}: ${rangeStart}..${rangeEnd} (direction=${cli.direction}, walk ${walkFrom} → ${walkTo})`,
+      `Using missing_block_ranges row id=${dbRow.id}: ${rangeStart}..${rangeEnd} (direction=${cli.direction}, walk ${walkFrom} → ${walkTo})`,
     );
   } else {
     rangeStart = cli.rangeStart!;
@@ -387,22 +408,26 @@ async function main(): Promise<void> {
 
   if (totalBlocks <= 0) {
     console.log("Nothing to do — range already complete in this direction.");
-    if (entryIndex !== null) {
-      const file = readRangesFile();
-      const entry = file.ranges[entryIndex];
-      const ascDone = entry.completedUpTo != null && entry.completedUpTo >= entry.endHeight;
-      const descDone =
-        entry.completedDownTo != null && entry.completedDownTo <= entry.startHeight;
-      if (ascDone || descDone) {
-        entry.status = "closed";
-        writeRangesFile(file);
-        console.log(`Entry ${entryIndex} marked status="closed".`);
+    if (rowId !== null) {
+      const row = await prisma.missingBlockRange.findUnique({ where: { id: rowId } });
+      if (row) {
+        const ascDone = row.completedUpTo != null && row.completedUpTo >= row.endHeight;
+        const descDone =
+          row.completedDownTo != null && row.completedDownTo <= row.startHeight;
+        if (ascDone || descDone) {
+          await prisma.missingBlockRange.update({
+            where: { id: rowId },
+            data: { status: "closed" },
+          });
+          console.log(`Row id=${rowId} marked status="closed".`);
+        }
       }
     }
     return;
   }
 
   console.log("=== backfill-range ===");
+  console.log(`row:                ${rowId ?? "(ad-hoc, no checkpointing)"}`);
   console.log(`range:              ${rangeStart}..${rangeEnd}`);
   console.log(`direction:          ${cli.direction}`);
   console.log(`walk:               ${walkFrom} → ${walkTo}  (${totalBlocks} blocks)`);
@@ -425,26 +450,23 @@ async function main(): Promise<void> {
     walkFrom,
     walkTo,
     totalBlocks,
-    (completedHeight) => {
-      if (entryIndex !== null) {
-        // Persist checkpoint for file-mode runs so we can resume.
-        const file = readRangesFile();
-        const entry = file.ranges[entryIndex];
-        if (!entry) return;
-
-        if (cli.direction === "asc") {
-          entry.completedUpTo = completedHeight;
-          if (completedHeight >= entry.endHeight) {
-            entry.status = "closed";
-          }
-        } else {
-          entry.completedDownTo = completedHeight;
-          if (completedHeight <= entry.startHeight) {
-            entry.status = "closed";
-          }
+    async (completedHeight) => {
+      if (rowId === null) return;
+      // Persist checkpoint to the missing_block_ranges row so resume is durable
+      // across container restarts (was JSON file before — now DB-backed).
+      const updateData: Prisma.MissingBlockRangeUpdateInput = {};
+      if (cli.direction === "asc") {
+        updateData.completedUpTo = BigInt(completedHeight);
+        if (completedHeight >= rangeEnd) {
+          updateData.status = "closed";
         }
-        writeRangesFile(file);
+      } else {
+        updateData.completedDownTo = BigInt(completedHeight);
+        if (completedHeight <= rangeStart) {
+          updateData.status = "closed";
+        }
       }
+      await prisma.missingBlockRange.update({ where: { id: rowId }, data: updateData });
     },
   );
 
@@ -461,11 +483,9 @@ async function main(): Promise<void> {
   console.log(`processed ${totalBlocks} blocks in ${elapsedS}s (${(totalBlocks / elapsedS).toFixed(2)} bps)`);
   console.log(`inserted:      ${totalInserted} transactions, ${totalSignEvents} sign events`);
   console.log(`missed slots:  ${totalSkipped}`);
-  if (entryIndex !== null) {
+  if (rowId !== null) {
     const field = cli.direction === "asc" ? "completedUpTo" : "completedDownTo";
-    console.log(
-      `range entry ${entryIndex} updated in ${MISSING_RANGES_FILE} (${field} advanced)`,
-    );
+    console.log(`row id=${rowId} updated in missing_block_ranges (${field} advanced)`);
   }
 }
 

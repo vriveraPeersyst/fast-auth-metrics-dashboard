@@ -1,32 +1,13 @@
 import "dotenv/config";
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { createNearRpcManager } from "@/lib/indexers/near-rpc-manager";
 import { prisma } from "@/lib/prisma";
 
-const MISSING_RANGES_FILE = resolve(process.cwd(), "data/missing-block-ranges.json");
 const CHECKPOINT_HEIGHT = "near_last_final_block_height";
 const CHECKPOINT_HASH = "near_last_final_block_hash";
 const CHECKPOINT_SCANNED_HEIGHT = "near_last_scanned_height";
 const CHECKPOINT_CHAIN_HEAD_HEIGHT = "near_chain_head_height";
 const CHECKPOINT_CHAIN_HEAD_HASH = "near_chain_head_hash";
-
-type MissingRange = {
-  startHeight: number;
-  endHeight: number;
-  reason: string;
-  recordedAt: string;
-  completedUpTo: number | null;
-  completedDownTo?: number | null;
-  status: "open" | "closed";
-};
-
-type MissingRangesFile = {
-  $schema?: string;
-  ranges: MissingRange[];
-};
 
 type NearBlockResponse = {
   result?: {
@@ -36,19 +17,6 @@ type NearBlockResponse = {
     };
   };
 };
-
-function readMissingRanges(): MissingRangesFile {
-  const raw = readFileSync(MISSING_RANGES_FILE, "utf8");
-  const parsed = JSON.parse(raw) as MissingRangesFile;
-  if (!Array.isArray(parsed.ranges)) {
-    throw new Error("data/missing-block-ranges.json is missing the `ranges` array.");
-  }
-  return parsed;
-}
-
-function writeMissingRanges(data: MissingRangesFile): void {
-  writeFileSync(MISSING_RANGES_FILE, JSON.stringify(data, null, 2) + "\n", "utf8");
-}
 
 async function main(): Promise<void> {
   const confirm = process.argv.includes("--confirm");
@@ -101,26 +69,30 @@ async function main(): Promise<void> {
   }
 
   if (!confirm) {
-    console.log("(dry run) Re-run with --confirm to write the gap to");
-    console.log(`  ${MISSING_RANGES_FILE}`);
-    console.log("and advance the DB checkpoints.");
+    console.log("(dry run) Re-run with --confirm to:");
+    console.log("  - insert the new range into missing_block_ranges");
+    console.log("  - advance the NEAR indexer checkpoints to chain tip");
     return;
   }
 
-  const file = readMissingRanges();
-  const nowIso = new Date().toISOString();
-  file.ranges.push({
-    startHeight: gapStart,
-    endHeight: gapEnd,
-    reason:
-      "skip-forward to chain tip: public RPC pool had pruned chunks for blocks in this range (UNKNOWN_CHUNK errors). Requires archival-backed backfill.",
-    recordedAt: nowIso,
-    completedUpTo: null,
-    completedDownTo: null,
-    status: "open",
+  // Insert the new gap into the missing_block_ranges table. Use upsert in case
+  // a previous run already created the same range — this keeps the script
+  // idempotent (re-running with --confirm won't fail or create duplicates).
+  const startHeightBig = BigInt(gapStart);
+  const endHeightBig = BigInt(gapEnd);
+  const range = await prisma.missingBlockRange.upsert({
+    where: { startHeight_endHeight: { startHeight: startHeightBig, endHeight: endHeightBig } },
+    create: {
+      startHeight: startHeightBig,
+      endHeight: endHeightBig,
+      reason:
+        "skip-forward to chain tip: public RPC pool had pruned chunks for blocks in this range (UNKNOWN_CHUNK errors). Requires archival-backed backfill.",
+      recordedAt: new Date(),
+      status: "open",
+    },
+    update: {},
   });
-  writeMissingRanges(file);
-  console.log(`Appended range to ${MISSING_RANGES_FILE}.`);
+  console.log(`Recorded gap as missing_block_ranges id=${range.id} (${range.status}).`);
 
   await prisma.$transaction([
     prisma.indexerCheckpoint.upsert({

@@ -1,0 +1,409 @@
+(base) vrcasadella@Victors-MacBook-Air fast-auth-metrics-dashboard % railway link
+> Select a workspace Victor Rivera's Projects
+> Select a project fast-auth-analytics
+> Select an environment production
+> Select a service <esc to skip> fast-auth-analytics
+
+Project fast-auth-analytics linked successfully! 🎉
+(base) vrcasadella@Victors-MacBook-Air fast-auth-metrics-dashboard % railway logs
+Starting Container
+2026-04-24T18:29:56.011919321Z [INFO] Indexer started startedAt="2026-04-24T18:29:55.075Z" source="fastauth_chain_health"
+2026-04-24T18:29:56.011926346Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430166 targetHeight=195430243 latestHeight=195430243 maxBlocksPerRun=500 blockConcurrency=30
+
+2026-04-24T18:29:56.011945073Z [INFO] Indexer worker started startedAt="2026-04-24T18:29:55.058Z" intervalMs=10000
+2026-04-24T18:29:56.011950189Z [INFO] Indexer started startedAt="2026-04-24T18:29:55.058Z" source="near"
+2026-04-24T18:29:56.011954982Z [INFO] Indexer started startedAt="2026-04-24T18:29:55.075Z" source="fastauth_public_keys"
+
+> fast-auth-metrics-dashboard@0.1.0 indexers:worker /app
+> tsx src/scripts/indexer-worker.ts
+2026-04-24T18:29:57.032410394Z [INFO] NEAR collector progress elapsedMs=988 processed=1 totalPlanned=78 currentHeight=195430178 latestPersistedHeight=195430178 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:29:57.265343524Z [INFO] NEAR collector progress elapsedMs=1373 processed=10 totalPlanned=78 currentHeight=195430183 latestPersistedHeight=195430191 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:29:59.140026369Z [INFO] NEAR collector progress elapsedMs=3245 processed=20 totalPlanned=78 currentHeight=195430195 latestPersistedHeight=195430195 indexedTransactions=7 indexedFastAuthSignEvents=7 skippedHeights=0
+2026-04-24T18:30:00.064001450Z [INFO] NEAR collector progress elapsedMs=3796 processed=30 totalPlanned=78 currentHeight=195430196 latestPersistedHeight=195430214 indexedTransactions=9 indexedFastAuthSignEvents=9 skippedHeights=0
+2026-04-24T18:30:00.106539792Z [INFO] NEAR collector progress elapsedMs=4216 processed=40 totalPlanned=78 currentHeight=195430174 latestPersistedHeight=195430223 indexedTransactions=11 indexedFastAuthSignEvents=11 skippedHeights=0
+2026-04-24T18:30:01.031804596Z [INFO] NEAR collector progress elapsedMs=4808 processed=50 totalPlanned=78 currentHeight=195430224 latestPersistedHeight=195430233 indexedTransactions=11 indexedFastAuthSignEvents=11 skippedHeights=0
+2026-04-24T18:30:01.295977103Z [INFO] NEAR collector progress elapsedMs=5405 processed=60 totalPlanned=78 currentHeight=195430229 latestPersistedHeight=195430234 indexedTransactions=13 indexedFastAuthSignEvents=13 skippedHeights=0
+2026-04-24T18:30:04.050383833Z [INFO] Indexer finished elapsedMs=8852 source="fastauth_public_keys" status="ok" inserted=31
+2026-04-24T18:30:10.064956574Z [INFO] Indexer still running elapsedMs=15001 source="near"
+2026-04-24T18:30:10.078052780Z [INFO] Indexer still running elapsedMs=15000 source="fastauth_chain_health"
+2026-04-24T18:30:10.229703600Z [INFO] NEAR collector progress elapsedMs=14338 processed=70 totalPlanned=78 currentHeight=195430235 latestPersistedHeight=195430240 indexedTransactions=15 indexedFastAuthSignEvents=15 skippedHeights=0
+2026-04-24T18:30:12.072326358Z [INFO] NEAR collector progress elapsedMs=15784 processed=78 totalPlanned=78 currentHeight=195430237 latestPersistedHeight=195430243 indexedTransactions=16 indexedFastAuthSignEvents=16 skippedHeights=0
+2026-04-24T18:30:12.072329772Z [INFO] Indexer finished elapsedMs=16694 source="near" status="ok" inserted=16
+2026-04-24T18:30:31.688395321Z [INFO] Indexer still running elapsedMs=30001 source="fastauth_chain_health"
+2026-04-24T18:30:40.184055013Z [INFO] Indexer still running elapsedMs=45002 source="fastauth_chain_health"
+2026-04-24T18:30:47.319035134Z [INFO] Indexer finished elapsedMs=52237 source="fastauth_chain_health" status="ok" inserted=1
+2026-04-24T18:30:47.319039849Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":16,"details":"Processed block heights 195430166..195430243; indexed 16 transactions and 16 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":31,"details":"Processed 51 sign events; upserted 31 links (25 new); touched 31 accounts (25 new)."},{"source":"fastauth_chain_health","status":"ok","inserted":1,"details":"Scanned blocks 195429945..195430244 (300); found 53 FastAuth tx (53 ok, 0 failed, 100%); 1 distinct relayers."}] runCount=1 timestamp="2026-04-24T18:29:55.058Z"
+2026-04-24T18:30:47.319043208Z [INFO] Indexer started startedAt="2026-04-24T18:30:47.314Z" source="near"
+2026-04-24T18:30:47.319046216Z [INFO] Indexer started startedAt="2026-04-24T18:30:47.314Z" source="fastauth_public_keys"
+2026-04-24T18:30:47.319049156Z [INFO] Indexer started startedAt="2026-04-24T18:30:47.314Z" source="fastauth_chain_health"
+2026-04-24T18:30:47.321158297Z [INFO] Indexer finished elapsedMs=6 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:30:47.623521254Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430244 targetHeight=195430327 latestHeight=195430327 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:30:48.294307152Z [INFO] NEAR collector progress elapsedMs=518 processed=1 totalPlanned=84 currentHeight=195430267 latestPersistedHeight=195430267 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:30:49.286748579Z [INFO] NEAR collector progress elapsedMs=1283 processed=10 totalPlanned=84 currentHeight=195430268 latestPersistedHeight=195430270 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:30:49.286752459Z [INFO] NEAR collector progress elapsedMs=1644 processed=80 totalPlanned=84 currentHeight=195430325 latestPersistedHeight=195430327 indexedTransactions=15 indexedFastAuthSignEvents=15 skippedHeights=0
+2026-04-24T18:30:49.286755184Z [INFO] NEAR collector progress elapsedMs=1395 processed=20 totalPlanned=84 currentHeight=195430284 latestPersistedHeight=195430284 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:30:49.286759546Z [INFO] NEAR collector progress elapsedMs=1440 processed=30 totalPlanned=84 currentHeight=195430290 latestPersistedHeight=195430291 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:30:49.286766089Z [INFO] NEAR collector progress elapsedMs=1580 processed=60 totalPlanned=84 currentHeight=195430306 latestPersistedHeight=195430309 indexedTransactions=10 indexedFastAuthSignEvents=10 skippedHeights=0
+2026-04-24T18:30:49.286775510Z [INFO] NEAR collector progress elapsedMs=1621 processed=70 totalPlanned=84 currentHeight=195430282 latestPersistedHeight=195430327 indexedTransactions=11 indexedFastAuthSignEvents=11 skippedHeights=0
+2026-04-24T18:30:49.286783852Z [INFO] NEAR collector progress elapsedMs=1518 processed=40 totalPlanned=84 currentHeight=195430295 latestPersistedHeight=195430296 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:30:49.286790777Z [INFO] NEAR collector progress elapsedMs=1544 processed=50 totalPlanned=84 currentHeight=195430277 latestPersistedHeight=195430302 indexedTransactions=7 indexedFastAuthSignEvents=7 skippedHeights=0
+2026-04-24T18:30:49.729488647Z [INFO] NEAR collector progress elapsedMs=2109 processed=84 totalPlanned=84 currentHeight=195430258 latestPersistedHeight=195430327 indexedTransactions=16 indexedFastAuthSignEvents=16 skippedHeights=0
+2026-04-24T18:30:49.813060805Z [INFO] Indexer finished elapsedMs=2485 source="near" status="ok" inserted=16
+2026-04-24T18:30:50.330185461Z [INFO] Indexer finished elapsedMs=2826 source="fastauth_public_keys" status="ok" inserted=16
+2026-04-24T18:30:50.330188534Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":16,"details":"Processed block heights 195430244..195430327; indexed 16 transactions and 16 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":16,"details":"Processed 16 sign events; upserted 16 links (16 new); touched 16 accounts (16 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 0s ago."}] runCount=2 timestamp="2026-04-24T18:30:47.314Z"
+2026-04-24T18:30:57.318476050Z [INFO] Indexer started startedAt="2026-04-24T18:30:57.317Z" source="near"
+2026-04-24T18:30:57.318480879Z [INFO] Indexer started startedAt="2026-04-24T18:30:57.317Z" source="fastauth_public_keys"
+2026-04-24T18:30:57.318484143Z [INFO] Indexer started startedAt="2026-04-24T18:30:57.318Z" source="fastauth_chain_health"
+2026-04-24T18:30:57.325018876Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:30:57.758864895Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430328 targetHeight=195430344 latestHeight=195430344 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:30:58.336572462Z [INFO] NEAR collector progress elapsedMs=518 processed=1 totalPlanned=17 currentHeight=195430343 latestPersistedHeight=195430343 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:30:58.633280398Z [INFO] Indexer finished elapsedMs=1310 source="fastauth_public_keys" status="ok" inserted=12
+2026-04-24T18:30:58.823574003Z [INFO] NEAR collector progress elapsedMs=1037 processed=10 totalPlanned=17 currentHeight=195430335 latestPersistedHeight=195430344 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:30:59.652811800Z [INFO] NEAR collector progress elapsedMs=1906 processed=17 totalPlanned=17 currentHeight=195430334 latestPersistedHeight=195430344 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:30:59.716417022Z [INFO] Indexer finished elapsedMs=2398 source="near" status="ok" inserted=5
+2026-04-24T18:30:59.716425150Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":5,"details":"Processed block heights 195430328..195430344; indexed 5 transactions and 5 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":12,"details":"Processed 16 sign events; upserted 12 links (9 new); touched 12 accounts (9 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 10s ago."}] runCount=3 timestamp="2026-04-24T18:30:57.317Z"
+2026-04-24T18:31:07.382421345Z [INFO] Indexer started startedAt="2026-04-24T18:31:07.318Z" source="near"
+2026-04-24T18:31:07.382424369Z [INFO] Indexer started startedAt="2026-04-24T18:31:07.318Z" source="fastauth_public_keys"
+2026-04-24T18:31:07.382427327Z [INFO] Indexer started startedAt="2026-04-24T18:31:07.318Z" source="fastauth_chain_health"
+2026-04-24T18:31:07.382430024Z [INFO] Indexer finished elapsedMs=11 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:07.673390805Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430345 targetHeight=195430360 latestHeight=195430360 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:08.377225928Z [INFO] NEAR collector progress elapsedMs=334 processed=1 totalPlanned=16 currentHeight=195430353 latestPersistedHeight=195430353 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:31:08.377228940Z [INFO] Indexer finished elapsedMs=931 source="fastauth_public_keys" status="ok" inserted=5
+2026-04-24T18:31:08.581957976Z [INFO] NEAR collector progress elapsedMs=907 processed=10 totalPlanned=16 currentHeight=195430348 latestPersistedHeight=195430360 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:08.761852741Z [INFO] NEAR collector progress elapsedMs=1085 processed=16 totalPlanned=16 currentHeight=195430355 latestPersistedHeight=195430360 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:08.827144481Z [INFO] Indexer finished elapsedMs=1504 source="near" status="ok" inserted=2
+2026-04-24T18:31:08.827147575Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430345..195430360; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":5,"details":"Processed 5 sign events; upserted 5 links (4 new); touched 5 accounts (4 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 20s ago."}] runCount=4 timestamp="2026-04-24T18:31:07.317Z"
+2026-04-24T18:31:17.444763157Z [INFO] Indexer started startedAt="2026-04-24T18:31:17.322Z" source="fastauth_public_keys"
+2026-04-24T18:31:17.444771277Z [INFO] Indexer started startedAt="2026-04-24T18:31:17.322Z" source="fastauth_chain_health"
+2026-04-24T18:31:17.444778719Z [INFO] Indexer finished elapsedMs=8 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:17.444809879Z [INFO] Indexer started startedAt="2026-04-24T18:31:17.322Z" source="near"
+2026-04-24T18:31:17.653761154Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430361 targetHeight=195430375 latestHeight=195430375 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:17.856260627Z [INFO] Indexer finished elapsedMs=528 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:31:17.961788730Z [INFO] NEAR collector progress elapsedMs=306 processed=1 totalPlanned=15 currentHeight=195430363 latestPersistedHeight=195430363 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:31:18.638515286Z [INFO] NEAR collector progress elapsedMs=982 processed=10 totalPlanned=15 currentHeight=195430366 latestPersistedHeight=195430374 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:31:19.030313489Z [INFO] NEAR collector progress elapsedMs=1372 processed=15 totalPlanned=15 currentHeight=195430368 latestPersistedHeight=195430375 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:19.447757622Z [INFO] Indexer finished elapsedMs=1767 source="near" status="ok" inserted=2
+2026-04-24T18:31:19.447760711Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430361..195430375; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (2 new); touched 2 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 30s ago."}] runCount=5 timestamp="2026-04-24T18:31:17.322Z"
+2026-04-24T18:31:27.470954087Z [INFO] Indexer finished elapsedMs=11 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:27.470976568Z [INFO] Indexer started startedAt="2026-04-24T18:31:27.326Z" source="near"
+2026-04-24T18:31:27.470984220Z [INFO] Indexer started startedAt="2026-04-24T18:31:27.327Z" source="fastauth_public_keys"
+2026-04-24T18:31:27.470988965Z [INFO] Indexer started startedAt="2026-04-24T18:31:27.327Z" source="fastauth_chain_health"
+2026-04-24T18:31:27.674217062Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430376 targetHeight=195430390 latestHeight=195430390 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:27.851892130Z [INFO] Indexer finished elapsedMs=519 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:31:27.960444698Z [INFO] NEAR collector progress elapsedMs=285 processed=1 totalPlanned=15 currentHeight=195430384 latestPersistedHeight=195430384 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:31:28.567892131Z [INFO] NEAR collector progress elapsedMs=890 processed=10 totalPlanned=15 currentHeight=195430376 latestPersistedHeight=195430390 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:28.949824426Z [INFO] NEAR collector progress elapsedMs=1273 processed=15 totalPlanned=15 currentHeight=195430386 latestPersistedHeight=195430390 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:31:29.024895602Z [INFO] Indexer finished elapsedMs=1691 source="near" status="ok" inserted=3
+2026-04-24T18:31:29.024898819Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":3,"details":"Processed block heights 195430376..195430390; indexed 3 transactions and 3 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (1 new); touched 2 accounts (1 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 40s ago."}] runCount=6 timestamp="2026-04-24T18:31:27.325Z"
+2026-04-24T18:31:37.506397451Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:37.506412240Z [INFO] Indexer started startedAt="2026-04-24T18:31:37.329Z" source="near"
+2026-04-24T18:31:37.506417997Z [INFO] Indexer started startedAt="2026-04-24T18:31:37.329Z" source="fastauth_public_keys"
+2026-04-24T18:31:37.506422027Z [INFO] Indexer started startedAt="2026-04-24T18:31:37.329Z" source="fastauth_chain_health"
+2026-04-24T18:31:37.628305770Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430391 targetHeight=195430407 latestHeight=195430407 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:37.952301145Z [INFO] Indexer finished elapsedMs=622 source="fastauth_public_keys" status="ok" inserted=3
+2026-04-24T18:31:38.038362012Z [INFO] NEAR collector progress elapsedMs=403 processed=1 totalPlanned=17 currentHeight=195430392 latestPersistedHeight=195430392 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:31:38.584070681Z [INFO] NEAR collector progress elapsedMs=969 processed=10 totalPlanned=17 currentHeight=195430397 latestPersistedHeight=195430405 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:31:38.867434435Z [INFO] NEAR collector progress elapsedMs=1251 processed=17 totalPlanned=17 currentHeight=195430407 latestPersistedHeight=195430407 indexedTransactions=6 indexedFastAuthSignEvents=6 skippedHeights=0
+2026-04-24T18:31:38.939886996Z [INFO] Indexer finished elapsedMs=1601 source="near" status="ok" inserted=6
+2026-04-24T18:31:38.939889900Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":6,"details":"Processed block heights 195430391..195430407; indexed 6 transactions and 6 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":3,"details":"Processed 3 sign events; upserted 3 links (3 new); touched 3 accounts (3 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 50s ago."}] runCount=7 timestamp="2026-04-24T18:31:37.328Z"
+2026-04-24T18:31:47.562411192Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:47.562438490Z [INFO] Indexer started startedAt="2026-04-24T18:31:47.330Z" source="near"
+2026-04-24T18:31:47.562442305Z [INFO] Indexer started startedAt="2026-04-24T18:31:47.330Z" source="fastauth_public_keys"
+2026-04-24T18:31:47.562446208Z [INFO] Indexer started startedAt="2026-04-24T18:31:47.330Z" source="fastauth_chain_health"
+2026-04-24T18:31:47.740585948Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430408 targetHeight=195430422 latestHeight=195430422 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:48.092883105Z [INFO] NEAR collector progress elapsedMs=349 processed=1 totalPlanned=15 currentHeight=195430421 latestPersistedHeight=195430421 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:31:48.575165065Z [INFO] Indexer finished elapsedMs=897 source="fastauth_public_keys" status="ok" inserted=6
+2026-04-24T18:31:48.761287391Z [INFO] NEAR collector progress elapsedMs=1015 processed=10 totalPlanned=15 currentHeight=195430419 latestPersistedHeight=195430421 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:49.574555373Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":4,"details":"Processed block heights 195430408..195430422; indexed 4 transactions and 4 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":6,"details":"Processed 6 sign events; upserted 6 links (5 new); touched 6 accounts (5 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 60s ago."}] runCount=8 timestamp="2026-04-24T18:31:47.329Z"
+2026-04-24T18:31:49.574583455Z [INFO] NEAR collector progress elapsedMs=1704 processed=15 totalPlanned=15 currentHeight=195430420 latestPersistedHeight=195430422 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:31:49.574586949Z [INFO] Indexer finished elapsedMs=2171 source="near" status="ok" inserted=4
+2026-04-24T18:31:57.604742125Z [INFO] Indexer started startedAt="2026-04-24T18:31:57.334Z" source="near"
+2026-04-24T18:31:57.604750228Z [INFO] Indexer started startedAt="2026-04-24T18:31:57.334Z" source="fastauth_public_keys"
+2026-04-24T18:31:57.604755066Z [INFO] Indexer started startedAt="2026-04-24T18:31:57.334Z" source="fastauth_chain_health"
+2026-04-24T18:31:57.604761322Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:31:57.856981676Z [INFO] Indexer finished elapsedMs=522 source="fastauth_public_keys" status="ok" inserted=4
+2026-04-24T18:31:58.201580310Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430423 targetHeight=195430437 latestHeight=195430437 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:31:58.652065822Z [INFO] NEAR collector progress elapsedMs=393 processed=1 totalPlanned=15 currentHeight=195430424 latestPersistedHeight=195430424 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:31:59.087190618Z [INFO] NEAR collector progress elapsedMs=886 processed=10 totalPlanned=15 currentHeight=195430423 latestPersistedHeight=195430437 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:31:59.659099387Z [INFO] NEAR collector progress elapsedMs=1457 processed=15 totalPlanned=15 currentHeight=195430432 latestPersistedHeight=195430437 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:31:59.718350751Z [INFO] Indexer finished elapsedMs=2376 source="near" status="ok" inserted=3
+2026-04-24T18:31:59.718355983Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":3,"details":"Processed block heights 195430423..195430437; indexed 3 transactions and 3 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":4,"details":"Processed 4 sign events; upserted 4 links (3 new); touched 4 accounts (3 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 70s ago."}] runCount=9 timestamp="2026-04-24T18:31:57.334Z"
+2026-04-24T18:32:07.678072001Z [INFO] Indexer started startedAt="2026-04-24T18:32:07.338Z" source="near"
+2026-04-24T18:32:07.678076820Z [INFO] Indexer started startedAt="2026-04-24T18:32:07.339Z" source="fastauth_public_keys"
+2026-04-24T18:32:07.678082199Z [INFO] Indexer started startedAt="2026-04-24T18:32:07.339Z" source="fastauth_chain_health"
+2026-04-24T18:32:07.678086543Z [INFO] Indexer finished elapsedMs=6 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:07.678091236Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430438 targetHeight=195430453 latestHeight=195430453 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:07.959120081Z [INFO] NEAR collector progress elapsedMs=297 processed=1 totalPlanned=16 currentHeight=195430440 latestPersistedHeight=195430440 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:32:08.138773082Z [INFO] Indexer finished elapsedMs=793 source="fastauth_public_keys" status="ok" inserted=3
+2026-04-24T18:32:08.693003705Z [INFO] NEAR collector progress elapsedMs=951 processed=10 totalPlanned=16 currentHeight=195430453 latestPersistedHeight=195430453 indexedTransactions=7 indexedFastAuthSignEvents=7 skippedHeights=0
+2026-04-24T18:32:09.103536740Z [INFO] NEAR collector progress elapsedMs=1439 processed=16 totalPlanned=16 currentHeight=195430447 latestPersistedHeight=195430453 indexedTransactions=7 indexedFastAuthSignEvents=7 skippedHeights=0
+2026-04-24T18:32:09.171899625Z [INFO] Indexer finished elapsedMs=1825 source="near" status="ok" inserted=7
+2026-04-24T18:32:09.171903762Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":7,"details":"Processed block heights 195430438..195430453; indexed 7 transactions and 7 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":3,"details":"Processed 3 sign events; upserted 3 links (2 new); touched 3 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 80s ago."}] runCount=10 timestamp="2026-04-24T18:32:07.337Z"
+2026-04-24T18:32:17.729663652Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:17.729674608Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430454 targetHeight=195430467 latestHeight=195430467 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:17.729674807Z [INFO] Indexer started startedAt="2026-04-24T18:32:17.341Z" source="near"
+2026-04-24T18:32:17.729679001Z [INFO] Indexer started startedAt="2026-04-24T18:32:17.342Z" source="fastauth_public_keys"
+2026-04-24T18:32:17.729682438Z [INFO] Indexer started startedAt="2026-04-24T18:32:17.342Z" source="fastauth_chain_health"
+2026-04-24T18:32:18.002331496Z [INFO] NEAR collector progress elapsedMs=311 processed=1 totalPlanned=14 currentHeight=195430462 latestPersistedHeight=195430462 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:18.765738811Z [INFO] NEAR collector progress elapsedMs=986 processed=10 totalPlanned=14 currentHeight=195430459 latestPersistedHeight=195430466 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:32:18.774956129Z [INFO] Indexer finished elapsedMs=1430 source="fastauth_public_keys" status="ok" inserted=7
+2026-04-24T18:32:18.916723150Z [INFO] NEAR collector progress elapsedMs=1219 processed=14 totalPlanned=14 currentHeight=195430467 latestPersistedHeight=195430467 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:32:18.977969205Z [INFO] Indexer finished elapsedMs=1636 source="near" status="ok" inserted=2
+2026-04-24T18:32:18.977974400Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430454..195430467; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":7,"details":"Processed 7 sign events; upserted 7 links (6 new); touched 7 accounts (6 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 90s ago."}] runCount=11 timestamp="2026-04-24T18:32:17.341Z"
+2026-04-24T18:32:27.347685339Z [INFO] Indexer started startedAt="2026-04-24T18:32:27.346Z" source="near"
+2026-04-24T18:32:27.347690458Z [INFO] Indexer started startedAt="2026-04-24T18:32:27.346Z" source="fastauth_public_keys"
+2026-04-24T18:32:27.347693487Z [INFO] Indexer started startedAt="2026-04-24T18:32:27.346Z" source="fastauth_chain_health"
+2026-04-24T18:32:27.354620114Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:27.901735617Z [INFO] Indexer finished elapsedMs=552 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:32:28.046991505Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430468 targetHeight=195430484 latestHeight=195430484 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:28.822847334Z [INFO] NEAR collector progress elapsedMs=432 processed=1 totalPlanned=17 currentHeight=195430482 latestPersistedHeight=195430482 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:28.901097284Z [INFO] NEAR collector progress elapsedMs=854 processed=10 totalPlanned=17 currentHeight=195430475 latestPersistedHeight=195430484 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:32:29.815637636Z [INFO] NEAR collector progress elapsedMs=1372 processed=17 totalPlanned=17 currentHeight=195430472 latestPersistedHeight=195430484 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:32:29.815640385Z [INFO] Indexer finished elapsedMs=2125 source="near" status="ok" inserted=2
+2026-04-24T18:32:29.815643613Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430468..195430484; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (0 new); touched 2 accounts (0 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 100s ago."}] runCount=12 timestamp="2026-04-24T18:32:27.345Z"
+2026-04-24T18:32:37.352879438Z [INFO] Indexer started startedAt="2026-04-24T18:32:37.350Z" source="near"
+2026-04-24T18:32:37.352885018Z [INFO] Indexer started startedAt="2026-04-24T18:32:37.350Z" source="fastauth_public_keys"
+2026-04-24T18:32:37.352887950Z [INFO] Indexer started startedAt="2026-04-24T18:32:37.350Z" source="fastauth_chain_health"
+2026-04-24T18:32:37.361142459Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:37.855521119Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430485 targetHeight=195430500 latestHeight=195430500 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:37.855530405Z [INFO] Indexer finished elapsedMs=496 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:32:37.966742553Z [INFO] NEAR collector progress elapsedMs=343 processed=1 totalPlanned=16 currentHeight=195430492 latestPersistedHeight=195430492 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:38.867138338Z [INFO] NEAR collector progress elapsedMs=965 processed=10 totalPlanned=16 currentHeight=195430496 latestPersistedHeight=195430500 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:32:39.863366128Z [INFO] NEAR collector progress elapsedMs=2101 processed=16 totalPlanned=16 currentHeight=195430488 latestPersistedHeight=195430500 indexedTransactions=6 indexedFastAuthSignEvents=6 skippedHeights=0
+2026-04-24T18:32:39.863370732Z [INFO] Indexer finished elapsedMs=2429 source="near" status="ok" inserted=6
+2026-04-24T18:32:39.863375425Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":6,"details":"Processed block heights 195430485..195430500; indexed 6 transactions and 6 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (1 new); touched 2 accounts (1 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 110s ago."}] runCount=13 timestamp="2026-04-24T18:32:37.349Z"
+2026-04-24T18:32:47.351886551Z [INFO] Indexer started startedAt="2026-04-24T18:32:47.350Z" source="near"
+2026-04-24T18:32:47.351889407Z [INFO] Indexer started startedAt="2026-04-24T18:32:47.350Z" source="fastauth_public_keys"
+2026-04-24T18:32:47.351892470Z [INFO] Indexer started startedAt="2026-04-24T18:32:47.350Z" source="fastauth_chain_health"
+2026-04-24T18:32:47.358892356Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:47.881266155Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430501 targetHeight=195430516 latestHeight=195430516 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:47.981535913Z [INFO] NEAR collector progress elapsedMs=303 processed=1 totalPlanned=16 currentHeight=195430515 latestPersistedHeight=195430515 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:48.238048171Z [INFO] Indexer finished elapsedMs=887 source="fastauth_public_keys" status="ok" inserted=6
+2026-04-24T18:32:48.895764745Z [INFO] NEAR collector progress elapsedMs=962 processed=10 totalPlanned=16 currentHeight=195430512 latestPersistedHeight=195430515 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:49.280093029Z [INFO] NEAR collector progress elapsedMs=1605 processed=16 totalPlanned=16 currentHeight=195430516 latestPersistedHeight=195430516 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:32:49.348451380Z [INFO] Indexer finished elapsedMs=1987 source="near" status="ok" inserted=2
+2026-04-24T18:32:49.348453966Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430501..195430516; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":6,"details":"Processed 6 sign events; upserted 6 links (5 new); touched 6 accounts (5 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 120s ago."}] runCount=14 timestamp="2026-04-24T18:32:47.349Z"
+2026-04-24T18:32:57.360480208Z [INFO] Indexer started startedAt="2026-04-24T18:32:57.350Z" source="near"
+2026-04-24T18:32:57.360485388Z [INFO] Indexer started startedAt="2026-04-24T18:32:57.350Z" source="fastauth_public_keys"
+2026-04-24T18:32:57.360488395Z [INFO] Indexer started startedAt="2026-04-24T18:32:57.350Z" source="fastauth_chain_health"
+2026-04-24T18:32:57.360491277Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:32:57.940811848Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430517 targetHeight=195430532 latestHeight=195430532 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:32:57.940816343Z [INFO] Indexer finished elapsedMs=528 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:32:58.346821063Z [INFO] NEAR collector progress elapsedMs=621 processed=1 totalPlanned=16 currentHeight=195430519 latestPersistedHeight=195430519 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:32:58.936057018Z [INFO] NEAR collector progress elapsedMs=990 processed=10 totalPlanned=16 currentHeight=195430529 latestPersistedHeight=195430530 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:32:59.105273489Z [INFO] NEAR collector progress elapsedMs=1389 processed=16 totalPlanned=16 currentHeight=195430531 latestPersistedHeight=195430532 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:32:59.166271919Z [INFO] Indexer finished elapsedMs=1810 source="near" status="ok" inserted=1
+2026-04-24T18:32:59.166278399Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":1,"details":"Processed block heights 195430517..195430532; indexed 1 transactions and 1 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (2 new); touched 2 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 130s ago."}] runCount=15 timestamp="2026-04-24T18:32:57.349Z"
+2026-04-24T18:33:07.358623408Z [INFO] Indexer started startedAt="2026-04-24T18:33:07.349Z" source="near"
+2026-04-24T18:33:07.358626560Z [INFO] Indexer started startedAt="2026-04-24T18:33:07.350Z" source="fastauth_public_keys"
+2026-04-24T18:33:07.358629277Z [INFO] Indexer started startedAt="2026-04-24T18:33:07.351Z" source="fastauth_chain_health"
+2026-04-24T18:33:07.360519674Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:07.957775400Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430533 targetHeight=195430548 latestHeight=195430548 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:07.957778230Z [INFO] Indexer finished elapsedMs=502 source="fastauth_public_keys" status="ok" inserted=1
+2026-04-24T18:33:07.974577052Z [INFO] NEAR collector progress elapsedMs=316 processed=1 totalPlanned=16 currentHeight=195430547 latestPersistedHeight=195430547 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:33:08.535145621Z [INFO] NEAR collector progress elapsedMs=874 processed=10 totalPlanned=16 currentHeight=195430534 latestPersistedHeight=195430548 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:33:08.962746568Z [INFO] NEAR collector progress elapsedMs=1298 processed=16 totalPlanned=16 currentHeight=195430544 latestPersistedHeight=195430548 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:33:09.014251755Z [INFO] Indexer finished elapsedMs=1661 source="near" status="ok" inserted=5
+2026-04-24T18:33:09.014254705Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":5,"details":"Processed block heights 195430533..195430548; indexed 5 transactions and 5 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":1,"details":"Processed 1 sign events; upserted 1 links (0 new); touched 1 accounts (0 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 140s ago."}] runCount=16 timestamp="2026-04-24T18:33:07.349Z"
+2026-04-24T18:33:17.363568599Z [INFO] Indexer started startedAt="2026-04-24T18:33:17.350Z" source="near"
+2026-04-24T18:33:17.363571865Z [INFO] Indexer started startedAt="2026-04-24T18:33:17.350Z" source="fastauth_public_keys"
+2026-04-24T18:33:17.363575110Z [INFO] Indexer started startedAt="2026-04-24T18:33:17.350Z" source="fastauth_chain_health"
+2026-04-24T18:33:17.363578069Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:17.988211386Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430549 targetHeight=195430564 latestHeight=195430564 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:17.988215426Z [INFO] NEAR collector progress elapsedMs=312 processed=1 totalPlanned=16 currentHeight=195430563 latestPersistedHeight=195430563 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:18.230759189Z [INFO] Indexer finished elapsedMs=878 source="fastauth_public_keys" status="ok" inserted=5
+2026-04-24T18:33:18.431641211Z [INFO] NEAR collector progress elapsedMs=786 processed=10 totalPlanned=16 currentHeight=195430558 latestPersistedHeight=195430564 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:19.005413791Z [INFO] NEAR collector progress elapsedMs=1061 processed=16 totalPlanned=16 currentHeight=195430559 latestPersistedHeight=195430564 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:19.005416894Z [INFO] Indexer finished elapsedMs=1368 source="near" status="ok" inserted=0
+2026-04-24T18:33:19.005420199Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":0,"details":"Processed block heights 195430549..195430564; indexed 0 transactions and 0 FastAuth sign events; rebuilt marts (0 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":5,"details":"Processed 5 sign events; upserted 5 links (3 new); touched 5 accounts (3 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 150s ago."}] runCount=17 timestamp="2026-04-24T18:33:17.349Z"
+2026-04-24T18:33:27.364847731Z [INFO] Indexer started startedAt="2026-04-24T18:33:27.354Z" source="near"
+2026-04-24T18:33:27.364851088Z [INFO] Indexer started startedAt="2026-04-24T18:33:27.354Z" source="fastauth_public_keys"
+2026-04-24T18:33:27.364854368Z [INFO] Indexer started startedAt="2026-04-24T18:33:27.354Z" source="fastauth_chain_health"
+2026-04-24T18:33:27.364859432Z [INFO] Indexer finished elapsedMs=8 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:27.366571772Z [INFO] Indexer finished elapsedMs=11 source="fastauth_public_keys" status="ok" inserted=0
+2026-04-24T18:33:28.041467341Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430565 targetHeight=195430579 latestHeight=195430579 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:28.041471509Z [INFO] NEAR collector progress elapsedMs=344 processed=1 totalPlanned=15 currentHeight=195430566 latestPersistedHeight=195430566 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:29.047693961Z [INFO] NEAR collector progress elapsedMs=1045 processed=10 totalPlanned=15 currentHeight=195430565 latestPersistedHeight=195430579 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:33:29.129964370Z [INFO] NEAR collector progress elapsedMs=1457 processed=15 totalPlanned=15 currentHeight=195430574 latestPersistedHeight=195430579 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:33:29.204649471Z [INFO] Indexer finished elapsedMs=1845 source="near" status="ok" inserted=4
+2026-04-24T18:33:29.204652461Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":4,"details":"Processed block heights 195430565..195430579; indexed 4 transactions and 4 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":0,"details":"No new sign events with user-derived-key metadata."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 160s ago."}] runCount=18 timestamp="2026-04-24T18:33:27.354Z"
+2026-04-24T18:33:37.364671653Z [INFO] Indexer started startedAt="2026-04-24T18:33:37.358Z" source="near"
+2026-04-24T18:33:37.364677208Z [INFO] Indexer started startedAt="2026-04-24T18:33:37.359Z" source="fastauth_public_keys"
+2026-04-24T18:33:37.364682286Z [INFO] Indexer started startedAt="2026-04-24T18:33:37.359Z" source="fastauth_chain_health"
+2026-04-24T18:33:37.364687732Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:38.120665200Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430580 targetHeight=195430595 latestHeight=195430595 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:38.135950289Z [INFO] Indexer finished elapsedMs=773 source="fastauth_public_keys" status="ok" inserted=4
+2026-04-24T18:33:38.589981926Z [INFO] NEAR collector progress elapsedMs=463 processed=1 totalPlanned=16 currentHeight=195430593 latestPersistedHeight=195430593 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:39.152618396Z [INFO] NEAR collector progress elapsedMs=1032 processed=10 totalPlanned=16 currentHeight=195430583 latestPersistedHeight=195430595 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:33:39.517654291Z [INFO] NEAR collector progress elapsedMs=1386 processed=16 totalPlanned=16 currentHeight=195430594 latestPersistedHeight=195430595 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:33:39.577133329Z [INFO] Indexer finished elapsedMs=2203 source="near" status="ok" inserted=5
+2026-04-24T18:33:39.577136903Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":5,"details":"Processed block heights 195430580..195430595; indexed 5 transactions and 5 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":4,"details":"Processed 4 sign events; upserted 4 links (4 new); touched 4 accounts (4 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 170s ago."}] runCount=19 timestamp="2026-04-24T18:33:37.358Z"
+2026-04-24T18:33:47.364928982Z [INFO] Indexer started startedAt="2026-04-24T18:33:47.362Z" source="near"
+2026-04-24T18:33:47.364935159Z [INFO] Indexer started startedAt="2026-04-24T18:33:47.362Z" source="fastauth_public_keys"
+2026-04-24T18:33:47.364939680Z [INFO] Indexer started startedAt="2026-04-24T18:33:47.363Z" source="fastauth_chain_health"
+2026-04-24T18:33:47.372117549Z [INFO] Indexer finished elapsedMs=6 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:47.681798542Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430596 targetHeight=195430611 latestHeight=195430611 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:48.089697317Z [INFO] NEAR collector progress elapsedMs=417 processed=1 totalPlanned=16 currentHeight=195430598 latestPersistedHeight=195430598 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:48.622715619Z [INFO] Indexer finished elapsedMs=1258 source="fastauth_public_keys" status="ok" inserted=5
+2026-04-24T18:33:49.108377313Z [INFO] NEAR collector progress elapsedMs=1038 processed=10 totalPlanned=16 currentHeight=195430605 latestPersistedHeight=195430609 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:33:49.295609263Z [INFO] NEAR collector progress elapsedMs=1621 processed=16 totalPlanned=16 currentHeight=195430602 latestPersistedHeight=195430611 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:33:49.355366683Z [INFO] Indexer finished elapsedMs=1988 source="near" status="ok" inserted=5
+2026-04-24T18:33:49.355371820Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":5,"details":"Processed block heights 195430596..195430611; indexed 5 transactions and 5 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":5,"details":"Processed 5 sign events; upserted 5 links (5 new); touched 5 accounts (5 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 180s ago."}] runCount=20 timestamp="2026-04-24T18:33:47.362Z"
+2026-04-24T18:33:57.368548145Z [INFO] Indexer started startedAt="2026-04-24T18:33:57.367Z" source="near"
+2026-04-24T18:33:57.368552392Z [INFO] Indexer started startedAt="2026-04-24T18:33:57.367Z" source="fastauth_public_keys"
+2026-04-24T18:33:57.368556972Z [INFO] Indexer started startedAt="2026-04-24T18:33:57.367Z" source="fastauth_chain_health"
+2026-04-24T18:33:57.375658798Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:33:57.665187271Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430612 targetHeight=195430627 latestHeight=195430627 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:33:58.226047982Z [INFO] NEAR collector progress elapsedMs=550 processed=1 totalPlanned=16 currentHeight=195430627 latestPersistedHeight=195430627 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:33:58.240158504Z [INFO] Indexer finished elapsedMs=869 source="fastauth_public_keys" status="ok" inserted=5
+2026-04-24T18:33:59.470955705Z [INFO] NEAR collector progress elapsedMs=1788 processed=10 totalPlanned=16 currentHeight=195430614 latestPersistedHeight=195430627 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:34:00.152366615Z [INFO] NEAR collector progress elapsedMs=2287 processed=16 totalPlanned=16 currentHeight=195430617 latestPersistedHeight=195430627 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:34:00.152371934Z [INFO] Indexer finished elapsedMs=2640 source="near" status="ok" inserted=3
+2026-04-24T18:34:00.152379063Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":3,"details":"Processed block heights 195430612..195430627; indexed 3 transactions and 3 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":5,"details":"Processed 5 sign events; upserted 5 links (4 new); touched 5 accounts (4 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 190s ago."}] runCount=21 timestamp="2026-04-24T18:33:57.367Z"
+2026-04-24T18:34:07.371938333Z [INFO] Indexer started startedAt="2026-04-24T18:34:07.371Z" source="near"
+2026-04-24T18:34:07.371946691Z [INFO] Indexer started startedAt="2026-04-24T18:34:07.371Z" source="fastauth_public_keys"
+2026-04-24T18:34:07.371951127Z [INFO] Indexer started startedAt="2026-04-24T18:34:07.371Z" source="fastauth_chain_health"
+2026-04-24T18:34:07.379493821Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:07.694948025Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430628 targetHeight=195430644 latestHeight=195430644 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:08.260606009Z [INFO] NEAR collector progress elapsedMs=327 processed=1 totalPlanned=17 currentHeight=195430636 latestPersistedHeight=195430636 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:08.344521651Z [INFO] Indexer finished elapsedMs=968 source="fastauth_public_keys" status="ok" inserted=3
+2026-04-24T18:34:08.677347438Z [INFO] NEAR collector progress elapsedMs=985 processed=10 totalPlanned=17 currentHeight=195430633 latestPersistedHeight=195430644 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:34:09.608551558Z [INFO] NEAR collector progress elapsedMs=1911 processed=17 totalPlanned=17 currentHeight=195430628 latestPersistedHeight=195430644 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:34:09.654746885Z [INFO] Indexer finished elapsedMs=2281 source="near" status="ok" inserted=2
+2026-04-24T18:34:09.654752011Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430628..195430644; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":3,"details":"Processed 3 sign events; upserted 3 links (3 new); touched 3 accounts (3 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 200s ago."}] runCount=22 timestamp="2026-04-24T18:34:07.371Z"
+2026-04-24T18:34:17.375949156Z [INFO] Indexer started startedAt="2026-04-24T18:34:17.374Z" source="near"
+2026-04-24T18:34:17.375953949Z [INFO] Indexer started startedAt="2026-04-24T18:34:17.374Z" source="fastauth_public_keys"
+2026-04-24T18:34:17.375957185Z [INFO] Indexer started startedAt="2026-04-24T18:34:17.374Z" source="fastauth_chain_health"
+2026-04-24T18:34:17.386499992Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:17.698723736Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430645 targetHeight=195430660 latestHeight=195430660 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:17.906191775Z [INFO] Indexer finished elapsedMs=523 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:34:18.333194484Z [INFO] NEAR collector progress elapsedMs=281 processed=1 totalPlanned=16 currentHeight=195430653 latestPersistedHeight=195430653 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:18.736541524Z [INFO] NEAR collector progress elapsedMs=1036 processed=10 totalPlanned=16 currentHeight=195430651 latestPersistedHeight=195430660 indexedTransactions=5 indexedFastAuthSignEvents=5 skippedHeights=0
+2026-04-24T18:34:18.829132013Z [INFO] NEAR collector progress elapsedMs=1129 processed=16 totalPlanned=16 currentHeight=195430648 latestPersistedHeight=195430660 indexedTransactions=8 indexedFastAuthSignEvents=8 skippedHeights=0
+2026-04-24T18:34:18.877437398Z [INFO] Indexer finished elapsedMs=1501 source="near" status="ok" inserted=8
+2026-04-24T18:34:18.877440232Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":8,"details":"Processed block heights 195430645..195430660; indexed 8 transactions and 8 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (2 new); touched 2 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 210s ago."}] runCount=23 timestamp="2026-04-24T18:34:17.374Z"
+2026-04-24T18:34:27.379767961Z [INFO] Indexer started startedAt="2026-04-24T18:34:27.378Z" source="near"
+2026-04-24T18:34:27.379773454Z [INFO] Indexer started startedAt="2026-04-24T18:34:27.378Z" source="fastauth_public_keys"
+2026-04-24T18:34:27.379776826Z [INFO] Indexer started startedAt="2026-04-24T18:34:27.378Z" source="fastauth_chain_health"
+2026-04-24T18:34:27.386444379Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:27.690208793Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430661 targetHeight=195430677 latestHeight=195430677 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:28.395827380Z [INFO] NEAR collector progress elapsedMs=353 processed=1 totalPlanned=17 currentHeight=195430668 latestPersistedHeight=195430668 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:28.624453739Z [INFO] Indexer finished elapsedMs=1237 source="fastauth_public_keys" status="ok" inserted=8
+2026-04-24T18:34:28.707804220Z [INFO] NEAR collector progress elapsedMs=1017 processed=10 totalPlanned=17 currentHeight=195430665 latestPersistedHeight=195430675 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:29.467030420Z [INFO] NEAR collector progress elapsedMs=1767 processed=17 totalPlanned=17 currentHeight=195430671 latestPersistedHeight=195430677 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:29.473882052Z [INFO] Indexer finished elapsedMs=2093 source="near" status="ok" inserted=0
+2026-04-24T18:34:29.473888241Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":0,"details":"Processed block heights 195430661..195430677; indexed 0 transactions and 0 FastAuth sign events; rebuilt marts (0 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":8,"details":"Processed 8 sign events; upserted 8 links (6 new); touched 8 accounts (6 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 220s ago."}] runCount=24 timestamp="2026-04-24T18:34:27.377Z"
+2026-04-24T18:34:37.408726338Z [INFO] Indexer started startedAt="2026-04-24T18:34:37.382Z" source="near"
+2026-04-24T18:34:37.408730294Z [INFO] Indexer started startedAt="2026-04-24T18:34:37.382Z" source="fastauth_public_keys"
+2026-04-24T18:34:37.408733794Z [INFO] Indexer started startedAt="2026-04-24T18:34:37.382Z" source="fastauth_chain_health"
+2026-04-24T18:34:37.408737204Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:37.408740543Z [INFO] Indexer finished elapsedMs=9 source="fastauth_public_keys" status="ok" inserted=0
+2026-04-24T18:34:37.699885780Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430678 targetHeight=195430693 latestHeight=195430693 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:38.425061639Z [INFO] NEAR collector progress elapsedMs=534 processed=1 totalPlanned=16 currentHeight=195430680 latestPersistedHeight=195430680 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:38.686809136Z [INFO] NEAR collector progress elapsedMs=979 processed=10 totalPlanned=16 currentHeight=195430683 latestPersistedHeight=195430692 indexedTransactions=6 indexedFastAuthSignEvents=6 skippedHeights=0
+2026-04-24T18:34:39.418544222Z [INFO] NEAR collector progress elapsedMs=1585 processed=16 totalPlanned=16 currentHeight=195430687 latestPersistedHeight=195430693 indexedTransactions=6 indexedFastAuthSignEvents=6 skippedHeights=0
+2026-04-24T18:34:39.418547618Z [INFO] Indexer finished elapsedMs=1957 source="near" status="ok" inserted=6
+2026-04-24T18:34:39.418551939Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":6,"details":"Processed block heights 195430678..195430693; indexed 6 transactions and 6 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":0,"details":"No new sign events with user-derived-key metadata."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 230s ago."}] runCount=25 timestamp="2026-04-24T18:34:37.381Z"
+2026-04-24T18:34:47.489398917Z [INFO] Indexer started startedAt="2026-04-24T18:34:47.383Z" source="near"
+2026-04-24T18:34:47.489405235Z [INFO] Indexer started startedAt="2026-04-24T18:34:47.384Z" source="fastauth_public_keys"
+2026-04-24T18:34:47.489409947Z [INFO] Indexer started startedAt="2026-04-24T18:34:47.384Z" source="fastauth_chain_health"
+2026-04-24T18:34:47.489414228Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:47.740457238Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430694 targetHeight=195430709 latestHeight=195430709 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:48.499667270Z [INFO] Indexer finished elapsedMs=870 source="fastauth_public_keys" status="ok" inserted=6
+2026-04-24T18:34:48.499669895Z [INFO] NEAR collector progress elapsedMs=573 processed=1 totalPlanned=16 currentHeight=195430709 latestPersistedHeight=195430709 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:48.647187093Z [INFO] NEAR collector progress elapsedMs=894 processed=10 totalPlanned=16 currentHeight=195430700 latestPersistedHeight=195430709 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:34:48.838891157Z [INFO] NEAR collector progress elapsedMs=1086 processed=16 totalPlanned=16 currentHeight=195430704 latestPersistedHeight=195430709 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:34:48.884870417Z [INFO] Indexer finished elapsedMs=1495 source="near" status="ok" inserted=1
+2026-04-24T18:34:48.884876735Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":1,"details":"Processed block heights 195430694..195430709; indexed 1 transactions and 1 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":6,"details":"Processed 6 sign events; upserted 6 links (6 new); touched 6 accounts (6 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 240s ago."}] runCount=26 timestamp="2026-04-24T18:34:47.383Z"
+2026-04-24T18:34:57.517004604Z [INFO] Indexer started startedAt="2026-04-24T18:34:57.387Z" source="fastauth_public_keys"
+2026-04-24T18:34:57.517013254Z [INFO] Indexer started startedAt="2026-04-24T18:34:57.387Z" source="fastauth_chain_health"
+2026-04-24T18:34:57.517013803Z [INFO] Indexer started startedAt="2026-04-24T18:34:57.387Z" source="near"
+2026-04-24T18:34:57.517018239Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:34:57.673066600Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430710 targetHeight=195430726 latestHeight=195430726 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:34:58.013421986Z [INFO] NEAR collector progress elapsedMs=339 processed=1 totalPlanned=17 currentHeight=195430724 latestPersistedHeight=195430724 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:58.571928454Z [INFO] Indexer finished elapsedMs=909 source="fastauth_public_keys" status="ok" inserted=1
+2026-04-24T18:34:58.752297137Z [INFO] NEAR collector progress elapsedMs=1074 processed=10 totalPlanned=17 currentHeight=195430714 latestPersistedHeight=195430724 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:34:59.550676032Z [INFO] NEAR collector progress elapsedMs=1644 processed=17 totalPlanned=17 currentHeight=195430725 latestPersistedHeight=195430726 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:34:59.550681930Z [INFO] Indexer finished elapsedMs=1984 source="near" status="ok" inserted=1
+2026-04-24T18:34:59.550686868Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":1,"details":"Processed block heights 195430710..195430726; indexed 1 transactions and 1 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":1,"details":"Processed 1 sign events; upserted 1 links (1 new); touched 1 accounts (1 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 250s ago."}] runCount=27 timestamp="2026-04-24T18:34:57.387Z"
+2026-04-24T18:35:07.582827486Z [INFO] Indexer started startedAt="2026-04-24T18:35:07.390Z" source="near"
+2026-04-24T18:35:07.582833915Z [INFO] Indexer started startedAt="2026-04-24T18:35:07.390Z" source="fastauth_public_keys"
+2026-04-24T18:35:07.582837841Z [INFO] Indexer started startedAt="2026-04-24T18:35:07.390Z" source="fastauth_chain_health"
+2026-04-24T18:35:07.582841326Z [INFO] Indexer finished elapsedMs=30 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:07.708339357Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430727 targetHeight=195430742 latestHeight=195430742 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:35:07.932422732Z [INFO] Indexer finished elapsedMs=536 source="fastauth_public_keys" status="ok" inserted=1
+2026-04-24T18:35:08.604070105Z [INFO] NEAR collector progress elapsedMs=539 processed=1 totalPlanned=16 currentHeight=195430741 latestPersistedHeight=195430741 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:08.776144370Z [INFO] NEAR collector progress elapsedMs=1059 processed=10 totalPlanned=16 currentHeight=195430733 latestPersistedHeight=195430741 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:35:09.596307524Z [INFO] NEAR collector progress elapsedMs=1549 processed=16 totalPlanned=16 currentHeight=195430729 latestPersistedHeight=195430742 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:35:09.596325499Z [INFO] Indexer finished elapsedMs=1978 source="near" status="ok" inserted=3
+2026-04-24T18:35:09.596329701Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":3,"details":"Processed block heights 195430727..195430742; indexed 3 transactions and 3 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":1,"details":"Processed 1 sign events; upserted 1 links (0 new); touched 1 accounts (0 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 260s ago."}] runCount=28 timestamp="2026-04-24T18:35:07.389Z"
+2026-04-24T18:35:17.636270808Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:17.636290369Z [INFO] Indexer started startedAt="2026-04-24T18:35:17.393Z" source="near"
+2026-04-24T18:35:17.636296166Z [INFO] Indexer started startedAt="2026-04-24T18:35:17.394Z" source="fastauth_public_keys"
+2026-04-24T18:35:17.636301222Z [INFO] Indexer started startedAt="2026-04-24T18:35:17.394Z" source="fastauth_chain_health"
+2026-04-24T18:35:17.734843680Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430743 targetHeight=195430759 latestHeight=195430759 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:35:18.219560911Z [INFO] NEAR collector progress elapsedMs=489 processed=1 totalPlanned=17 currentHeight=195430743 latestPersistedHeight=195430743 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:18.871481885Z [INFO] NEAR collector progress elapsedMs=1144 processed=10 totalPlanned=17 currentHeight=195430752 latestPersistedHeight=195430759 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:18.898859904Z [INFO] Indexer finished elapsedMs=1498 source="fastauth_public_keys" status="ok" inserted=3
+2026-04-24T18:35:19.811872352Z [INFO] NEAR collector progress elapsedMs=2079 processed=17 totalPlanned=17 currentHeight=195430746 latestPersistedHeight=195430759 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:35:19.870558438Z [INFO] Indexer finished elapsedMs=2475 source="near" status="ok" inserted=1
+2026-04-24T18:35:19.870561487Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":1,"details":"Processed block heights 195430743..195430759; indexed 1 transactions and 1 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":3,"details":"Processed 3 sign events; upserted 3 links (2 new); touched 3 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 270s ago."}] runCount=29 timestamp="2026-04-24T18:35:17.393Z"
+2026-04-24T18:35:27.677800190Z [INFO] Indexer started startedAt="2026-04-24T18:35:27.394Z" source="near"
+2026-04-24T18:35:27.677804465Z [INFO] Indexer started startedAt="2026-04-24T18:35:27.394Z" source="fastauth_public_keys"
+2026-04-24T18:35:27.677808532Z [INFO] Indexer started startedAt="2026-04-24T18:35:27.394Z" source="fastauth_chain_health"
+2026-04-24T18:35:27.677812312Z [INFO] Indexer finished elapsedMs=6 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:27.720031172Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430760 targetHeight=195430775 latestHeight=195430775 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:35:27.881719046Z [INFO] Indexer finished elapsedMs=487 source="fastauth_public_keys" status="ok" inserted=1
+2026-04-24T18:35:28.038716632Z [INFO] NEAR collector progress elapsedMs=320 processed=1 totalPlanned=16 currentHeight=195430774 latestPersistedHeight=195430774 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:28.708560043Z [INFO] NEAR collector progress elapsedMs=993 processed=10 totalPlanned=16 currentHeight=195430765 latestPersistedHeight=195430775 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:35:29.005767995Z [INFO] NEAR collector progress elapsedMs=1290 processed=16 totalPlanned=16 currentHeight=195430769 latestPersistedHeight=195430775 indexedTransactions=3 indexedFastAuthSignEvents=3 skippedHeights=0
+2026-04-24T18:35:29.092984257Z [INFO] Indexer finished elapsedMs=1664 source="near" status="ok" inserted=3
+2026-04-24T18:35:29.092987225Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":3,"details":"Processed block heights 195430760..195430775; indexed 3 transactions and 3 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":1,"details":"Processed 1 sign events; upserted 1 links (1 new); touched 1 accounts (1 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 280s ago."}] runCount=30 timestamp="2026-04-24T18:35:27.393Z"
+2026-04-24T18:35:37.741289660Z [INFO] Indexer started startedAt="2026-04-24T18:35:37.394Z" source="near"
+2026-04-24T18:35:37.741293836Z [INFO] Indexer started startedAt="2026-04-24T18:35:37.394Z" source="fastauth_public_keys"
+2026-04-24T18:35:37.741298303Z [INFO] Indexer started startedAt="2026-04-24T18:35:37.394Z" source="fastauth_chain_health"
+2026-04-24T18:35:37.741302871Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:37.741307048Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430776 targetHeight=195430791 latestHeight=195430791 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:35:38.031411464Z [INFO] NEAR collector progress elapsedMs=310 processed=1 totalPlanned=16 currentHeight=195430784 latestPersistedHeight=195430784 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:38.846694863Z [INFO] NEAR collector progress elapsedMs=1101 processed=10 totalPlanned=16 currentHeight=195430785 latestPersistedHeight=195430790 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:35:38.885417370Z [INFO] Indexer finished elapsedMs=1490 source="fastauth_public_keys" status="ok" inserted=3
+2026-04-24T18:35:39.285033062Z [INFO] NEAR collector progress elapsedMs=1564 processed=16 totalPlanned=16 currentHeight=195430777 latestPersistedHeight=195430791 indexedTransactions=4 indexedFastAuthSignEvents=4 skippedHeights=0
+2026-04-24T18:35:39.761906728Z [INFO] Indexer finished elapsedMs=1949 source="near" status="ok" inserted=4
+2026-04-24T18:35:39.761912015Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":4,"details":"Processed block heights 195430776..195430791; indexed 4 transactions and 4 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":3,"details":"Processed 3 sign events; upserted 3 links (3 new); touched 3 accounts (3 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 290s ago."}] runCount=31 timestamp="2026-04-24T18:35:37.393Z"
+2026-04-24T18:35:47.779142583Z [INFO] Indexer started startedAt="2026-04-24T18:35:47.397Z" source="fastauth_public_keys"
+2026-04-24T18:35:47.779145403Z [INFO] Indexer started startedAt="2026-04-24T18:35:47.398Z" source="fastauth_chain_health"
+2026-04-24T18:35:47.779149336Z [INFO] Indexer finished elapsedMs=7 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:47.922775294Z [INFO] Indexer finished elapsedMs=522 source="fastauth_public_keys" status="ok" inserted=4
+2026-04-24T18:35:48.241837658Z [INFO] NEAR collector progress elapsedMs=549 processed=1 totalPlanned=17 currentHeight=195430808 latestPersistedHeight=195430808 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0
+2026-04-24T18:35:48.784949546Z [INFO] NEAR collector progress elapsedMs=985 processed=10 totalPlanned=17 currentHeight=195430803 latestPersistedHeight=195430808 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:35:49.179003565Z [INFO] NEAR collector progress elapsedMs=1424 processed=17 totalPlanned=17 currentHeight=195430806 latestPersistedHeight=195430808 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:35:49.179006177Z [INFO] Indexer finished elapsedMs=1778 source="near" status="ok" inserted=2
+2026-04-24T18:35:49.179008877Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430792..195430808; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":4,"details":"Processed 4 sign events; upserted 4 links (4 new); touched 4 accounts (4 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 300s ago."}] runCount=32 timestamp="2026-04-24T18:35:47.397Z"
+2026-04-24T18:35:57.414372696Z [INFO] Indexer started startedAt="2026-04-24T18:35:57.400Z" source="near"
+2026-04-24T18:35:57.414377237Z [INFO] Indexer started startedAt="2026-04-24T18:35:57.401Z" source="fastauth_public_keys"
+2026-04-24T18:35:57.414385740Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:35:57.908845416Z [INFO] Indexer finished elapsedMs=504 source="fastauth_public_keys" status="ok" inserted=2
+2026-04-24T18:35:58.013224372Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430809 targetHeight=195430824 latestHeight=195430824 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:35:58.818849543Z [INFO] NEAR collector progress elapsedMs=566 processed=1 totalPlanned=16 currentHeight=195430815 latestPersistedHeight=195430815 indexedTransactions=1 indexedFastAuthSignEvents=1 skippedHeights=0
+2026-04-24T18:35:59.127115206Z [INFO] NEAR collector progress elapsedMs=1106 processed=10 totalPlanned=16 currentHeight=195430818 latestPersistedHeight=195430823 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:35:59.838996302Z [INFO] Indexer finished elapsedMs=2192 source="near" status="ok" inserted=6
+2026-04-24T18:35:59.838999806Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":6,"details":"Processed block heights 195430809..195430824; indexed 6 transactions and 6 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":2,"details":"Processed 2 sign events; upserted 2 links (2 new); touched 2 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 310s ago."}] runCount=33 timestamp="2026-04-24T18:35:57.400Z"
+2026-04-24T18:36:07.401698246Z [INFO] Indexer started startedAt="2026-04-24T18:36:07.400Z" source="near"
+2026-04-24T18:36:07.403739471Z [INFO] Indexer started startedAt="2026-04-24T18:36:07.401Z" source="fastauth_chain_health"
+2026-04-24T18:36:07.409907709Z [INFO] Indexer finished elapsedMs=6 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:36:07.863654799Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430825 targetHeight=195430839 latestHeight=195430839 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:36:08.866964481Z [INFO] Indexer finished elapsedMs=1095 source="fastauth_public_keys" status="ok" inserted=6
+2026-04-24T18:36:08.866967810Z [INFO] NEAR collector progress elapsedMs=1003 processed=10 totalPlanned=15 currentHeight=195430830 latestPersistedHeight=195430838 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:36:09.143701615Z [INFO] NEAR collector progress elapsedMs=1395 processed=15 totalPlanned=15 currentHeight=195430827 latestPersistedHeight=195430839 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:36:09.198956451Z [INFO] Indexer finished elapsedMs=1795 source="near" status="ok" inserted=2
+2026-04-24T18:36:09.198962473Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":2,"details":"Processed block heights 195430825..195430839; indexed 2 transactions and 2 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":6,"details":"Processed 6 sign events; upserted 6 links (4 new); touched 6 accounts (4 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 320s ago."}] runCount=34 timestamp="2026-04-24T18:36:07.400Z"
+2026-04-24T18:36:17.406270293Z [INFO] Indexer started startedAt="2026-04-24T18:36:17.405Z" source="near"
+2026-04-24T18:36:17.903153088Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430840 targetHeight=195430856 latestHeight=195430856 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:36:18.915795512Z [INFO] NEAR collector progress elapsedMs=909 processed=10 totalPlanned=17 currentHeight=195430840 latestPersistedHeight=195430855 indexedTransactions=2 indexedFastAuthSignEvents=2 skippedHeights=0
+2026-04-24T18:36:19.911881014Z [INFO] Indexer finished elapsedMs=2340 source="near" status="ok" inserted=4
+2026-04-24T18:36:29.951351884Z [INFO] Indexer finished elapsedMs=2351 source="near" status="ok" inserted=6
+2026-04-24T18:36:29.951356482Z [INFO] Indexer iteration completed results=[{"source":"near","status":"ok","inserted":6,"details":"Processed block heights 195430857..195430872; indexed 6 transactions and 6 FastAuth sign events; rebuilt marts (1 relayers); skipped 0 empty heights."},{"source":"fastauth_public_keys","status":"ok","inserted":4,"details":"Processed 4 sign events; upserted 4 links (2 new); touched 4 accounts (2 new)."},{"source":"fastauth_chain_health","status":"skipped","details":"Throttled; last run 340s ago."}] runCount=36 timestamp="2026-04-24T18:36:27.407Z"
+2026-04-24T18:36:37.413458588Z [INFO] Indexer started startedAt="2026-04-24T18:36:37.410Z" source="near"
+2026-04-24T18:36:37.420949139Z [INFO] Indexer finished elapsedMs=5 source="fastauth_chain_health" status="skipped" inserted=0
+2026-04-24T18:36:38.027771761Z [INFO] NEAR collector range selected chunkConcurrency=9 startHeight=195430873 targetHeight=195430889 latestHeight=195430889 maxBlocksPerRun=500 blockConcurrency=30
+2026-04-24T18:36:38.163616984Z [INFO] NEAR collector progress elapsedMs=409 processed=1 totalPlanned=17 currentHeight=195430887 latestPersistedHeight=195430887 indexedTransactions=0 indexedFastAuthSignEvents=0 skippedHeights=0

@@ -99,6 +99,7 @@ export class NearRpcManager {
   private readonly baseDelayMs: number;
   private readonly requestTimeoutMs: number;
   private readonly requestId: string;
+  private readonly bearerToken: string | null;
 
   constructor(
     urls: string[],
@@ -109,6 +110,7 @@ export class NearRpcManager {
       baseDelayMs?: number;
       requestTimeoutMs?: number;
       requestId?: string;
+      bearerToken?: string | null;
     },
   ) {
     this.endpoints = uniqueUrls(urls).map((url) => ({
@@ -123,6 +125,7 @@ export class NearRpcManager {
     this.maxAttempts = options?.maxAttempts ?? Math.max(this.endpoints.length * 2, DEFAULT_RETRY_COUNT);
     this.requestTimeoutMs = options?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.requestId = options?.requestId ?? DEFAULT_REQUEST_ID;
+    this.bearerToken = options?.bearerToken?.trim() ? options.bearerToken.trim() : null;
 
     if (this.endpoints.length === 0) {
       throw new Error("NearRpcManager requires at least one RPC endpoint.");
@@ -241,12 +244,14 @@ export class NearRpcManager {
       }, this.requestTimeoutMs);
 
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (this.bearerToken) {
+          headers.Authorization = `Bearer ${this.bearerToken}`;
+        }
         const response = await fetch(endpoint.url, {
           method: "POST",
           signal: abortController.signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers,
           body: JSON.stringify({
             jsonrpc: "2.0",
             id: this.requestId,
