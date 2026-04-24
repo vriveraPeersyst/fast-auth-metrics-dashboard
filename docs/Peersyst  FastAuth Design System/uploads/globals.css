@@ -143,50 +143,10 @@ h3 {
 
 .dashboardRoot {
   width: min(1184px, 100% - 48px);
-  margin: 0 auto 88px;
+  margin: 48px auto 88px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-/* FastAuth typographic logo — Fast[Auth]. */
-.fastAuthLogo {
-  display: inline-flex;
-  align-items: baseline;
-  font-family: var(--font-sans);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1;
-  user-select: none;
-}
-
-.fastAuthLogo__fast {
-  font-size: inherit;
-}
-
-.fastAuthLogo__auth {
-  font-size: inherit;
-  background: var(--color-mint);
-  color: var(--color-ink);
-  padding: 2px 8px 3px;
-  border-radius: 8px;
-  line-height: 1;
-}
-
-.fastAuthLogo__dot {
-  font-size: inherit;
-}
-
-/* Section kicker — categorical label above each group */
-.sectionKicker {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 500;
-  color: var(--color-ink-muted);
-  margin-top: 16px;
+  gap: 24px;
 }
 
 .statusFocusGrid {
@@ -195,16 +155,7 @@ h3 {
   gap: 12px;
 }
 
-.statusFocusGrid > .healthCard {
-  padding: 32px;
-}
-
-.statusFocusGrid > .healthCard .healthCardHeader h3 {
-  font-size: 22px;
-  line-height: 28px;
-}
-
-/* Header bar */
+/* Header bar — white card with mint primary CTA */
 .dashboardTopbar {
   display: flex;
   justify-content: space-between;
@@ -215,98 +166,23 @@ h3 {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
-  min-height: 72px;
-  margin-top: 24px;
-}
-
-.topbarBrand {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
+  min-height: 84px;
 }
 
 .dashboardTopbar h1 {
-  font-size: 26px;
-  line-height: 32px;
+  font-size: 28px;
+  line-height: 36px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
   background: none;
   -webkit-text-fill-color: currentColor;
 }
 
-.dashboardTopbar .kicker {
-  color: var(--color-ink-subtle);
-  margin-bottom: 0;
-  font-size: 11px;
-  line-height: 16px;
-}
-
-/* Footer */
-.dashboardFooter {
+.topbarActions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 24px 0 0;
-  border-top: 1px solid var(--color-border-subtle);
-  margin-top: 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-ink-muted);
-}
-
-/* Disclosure — collapsible panel */
-.disclosureToggle {
-  display: block;
-  width: 100%;
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-}
-
-.disclosureToggle:focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.disclosureToggle .panelTitleRow {
-  align-items: center;
-}
-
-.disclosureDesc {
-  color: var(--color-ink-subtle);
-  font-size: 14px;
-  line-height: 24px;
-  margin-top: 2px;
-}
-
-.disclosureCaret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  color: var(--color-ink-subtle);
-  transition: transform 180ms ease, color 120ms ease;
-  flex-shrink: 0;
-}
-
-.disclosureCaret[data-open="true"] {
-  transform: rotate(90deg);
-  color: var(--color-ink);
-}
-
-.disclosureBody {
-  margin-top: 24px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* Pills — §5.2 */
@@ -660,119 +536,6 @@ tbody tr:hover {
   font-size: 14px;
 }
 
-/* Metric tabs — pivoted card with time-window strip */
-.metricTabsCard {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  grid-column: span 3;
-}
-
-.metricTabsHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.metricTabsTitle {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 20px;
-  font-weight: 500;
-  color: var(--color-ink-subtle);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.metricTabsStrip {
-  display: flex;
-  gap: 0;
-}
-
-.metricTab {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  padding: 8px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 500;
-  color: var(--color-ink-subtle);
-  border-radius: var(--radius-pill);
-  position: relative;
-  white-space: nowrap;
-  transition: color 120ms ease, background 120ms ease;
-}
-
-.metricTab:hover {
-  color: var(--color-ink);
-  background: var(--color-surface-muted);
-}
-
-.metricTab[aria-selected="true"] {
-  color: var(--color-ink);
-  background: var(--color-mint);
-  font-weight: 700;
-}
-
-.metricTab:focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 2px;
-}
-
-.metricTabsBody {
-  padding: 24px;
-  display: grid;
-  gap: 16px;
-}
-
-.metricTabsRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.metricTabsRow:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.metricTabsRow--headline {
-  padding-bottom: 20px;
-}
-
-.metricTabsLabel {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--color-ink-subtle);
-}
-
-.metricTabsValue {
-  font-family: var(--font-sans);
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 700;
-  color: var(--color-ink);
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-
-.metricTabsValue--headline {
-  font-size: 32px;
-  line-height: 40px;
-}
-
 /* Sign in */
 .signInRoot {
   width: min(980px, 100% - 48px);
@@ -797,20 +560,10 @@ tbody tr:hover {
   font-size: 40px;
   line-height: 48px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
   background: none;
   -webkit-text-fill-color: currentColor;
-}
-
-.signInLogo {
-  font-size: 48px;
-  line-height: 56px;
-}
-
-.signInLogo .fastAuthLogo__auth {
-  padding: 3px 12px 5px;
-  border-radius: 12px;
 }
 
 .signInCard p {
@@ -826,10 +579,6 @@ tbody tr:hover {
   }
 
   .metricCard {
-    grid-column: span 3;
-  }
-
-  .metricTabsCard {
     grid-column: span 3;
   }
 
@@ -856,22 +605,11 @@ tbody tr:hover {
   .dashboardTopbar {
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
-    padding: 16px 20px;
+    padding: 20px;
   }
 
   .metricCard {
     grid-column: span 6;
-  }
-
-  .metricTabsCard {
-    grid-column: span 6;
-  }
-
-  .metricTabsHeader {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
   }
 
   .metricsGrid--dense {

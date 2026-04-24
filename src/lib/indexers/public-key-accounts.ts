@@ -1,10 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { HttpEndpointPool, parseHttpPoolTemplates } from "@/lib/indexers/http-endpoint-pool";
-import {
-  NearRpcManager,
-  resolveNormalNearRpcManagerUrlsFromEnv,
-} from "@/lib/indexers/near-rpc-manager";
+import { createNearRpcManager, type NearRpcManager } from "@/lib/indexers/near-rpc-manager";
 import type { IndexerRunResult } from "@/lib/indexers/types";
 
 const CHECKPOINT_KEY = "fastauth_public_key_accounts_last_event_id";
@@ -282,7 +279,7 @@ export async function collectFastAuthPublicKeyAccounts(
     placeholder: "publicKey",
     bearerToken: process.env.FASTNEAR_API_KEY ?? null,
   });
-  const rpcManager = new NearRpcManager(resolveNormalNearRpcManagerUrlsFromEnv());
+  const rpcManager = createNearRpcManager();
 
   try {
     const batchSize = resolveBatchSize();

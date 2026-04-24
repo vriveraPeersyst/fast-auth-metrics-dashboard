@@ -7,100 +7,87 @@ type RpcEndpoint = {
 
 const DEFAULT_RETRY_COUNT = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
-const DEFAULT_BLACKLIST_DURATION_MS = 5 * 60 * 1000;
+// Short enough that a transient burst-limited RPC recovers within a few indexer
+// ticks, rather than being locked out for the full 5 min a stricter blacklist
+// would impose.
+const DEFAULT_BLACKLIST_DURATION_MS = 60 * 1000;
 const DEFAULT_MAX_RPC_FAILURES = 3;
-const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_REQUEST_ID = "fast-auth-metrics-dashboard";
 
-export const DEFAULT_NORMAL_NEAR_RPC_URLS = [
-  "https://near.lava.build",
+// Hardcoded NEAR RPC pool. All queries (latest-final, block-by-height,
+// chunk-by-hash) rotate across this list with failover on 429/5xx.
+// Archival endpoints are intentionally excluded — we do not need deep
+// historical backfill; checkpoint-driven polling against public endpoints is
+// sufficient for the FastAuth metrics window.
+//
+// Ordered by **sustained capacity** at c=40 ramp benchmark (2026-04-24),
+// not raw single-call latency. The manager is sticky-current: position 0
+// handles all traffic until it 429s, then rotates. An endpoint that is
+// fast at c=5 but rate-limits at c=40 (e.g. `rpc.shitzuapes.xyz`) is the
+// wrong choice for position 0 under our 120-concurrent indexer load.
+//
+// Per-endpoint capacity (100% success rate + achieved RPS at c=40):
+//   blockpi       100%, 113 RPS, p50 151ms — workhorse
+//   lava          100%,  95 RPS, p50 188ms — tied for fastest single-call
+//   fastnear      100%,  73 RPS, p50 251ms — reliable mid-tier
+//   drpc          100%,  40 RPS, p50 436ms — reliable, degrades under load
+//   1rpc.io       100%,  28 RPS, p50 693ms — slow but never errored
+//   shitzuapes     37%,  38 RPS, p50 235ms — rate-limits hard, failover only
+//
+// Dropped: api.zan.top (HTTP 400 on all calls), rpc.intea.rs (0% @ c=10).
+export const NEAR_RPC_URLS = [
   "https://near.blockpi.network/v1/rpc/public",
+  "https://near.lava.build",
+  "https://free.rpc.fastnear.com",
+  "https://near.drpc.org",
+  "https://1rpc.io/near",
   "https://rpc.shitzuapes.xyz",
 ];
-export const DEFAULT_ARCHIVAL_NEAR_RPC_URLS = [
-  "https://archival-rpc.mainnet.near.org",
-  "https://archival-rpc.mainnet.fastnear.com",
-];
-export const DEFAULT_NORMAL_NEAR_RPC_URL = DEFAULT_NORMAL_NEAR_RPC_URLS[0];
-export const DEFAULT_ARCHIVAL_NEAR_RPC_URL = "https://archival-rpc.mainnet.fastnear.com";
-
-function normalizeUrl(value: string | null | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function resolveRequestTimeoutMs(): number {
-  const raw = process.env.NEAR_RPC_REQUEST_TIMEOUT_MS;
-
-  if (!raw) {
-    return DEFAULT_REQUEST_TIMEOUT_MS;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1_000) {
-    return DEFAULT_REQUEST_TIMEOUT_MS;
-  }
-
-  return Math.floor(parsed);
-}
-
-export function uniqueUrls(urls: Array<string | null | undefined>): string[] {
-  const normalized = urls
-    .map((url) => normalizeUrl(url))
-    .filter((url): url is string => Boolean(url));
-
+function uniqueUrls(urls: string[]): string[] {
+  const normalized = urls.map((url) => url.trim()).filter(Boolean);
   return [...new Set(normalized)];
 }
 
-export function parseRpcFallbackUrls(raw: string | null | undefined): string[] {
-  if (!raw) {
-    return [];
+export function createNearRpcManager(): NearRpcManager {
+  return new NearRpcManager(NEAR_RPC_URLS);
+}
+
+// Error thrown when `request()` exhausts all retries. Carries per-endpoint
+// outcome metadata so callers can reason about *why* the request failed —
+// specifically, how many distinct endpoints confirmed UNKNOWN_BLOCK. Callers
+// that permanently skip missing heights (e.g., `near.ts`) use this to require
+// majority consensus before marking a height as genuinely absent on-chain.
+export class NearRpcExhaustedError extends Error {
+  readonly unknownBlockEndpoints: ReadonlySet<string>;
+  readonly healthyEndpointCount: number;
+  readonly totalAttempts: number;
+
+  constructor(
+    message: string,
+    unknownBlockEndpoints: ReadonlySet<string>,
+    healthyEndpointCount: number,
+    totalAttempts: number,
+  ) {
+    super(message);
+    this.name = "NearRpcExhaustedError";
+    this.unknownBlockEndpoints = unknownBlockEndpoints;
+    this.healthyEndpointCount = healthyEndpointCount;
+    this.totalAttempts = totalAttempts;
   }
-
-  return raw
-    .split(",")
-    .map((url) => url.trim())
-    .filter(Boolean);
 }
 
-export function resolveNearRpcManagerUrls(params: {
-  primaryUrl?: string | null;
-  defaultUrls: string[];
-  fallbackRaw?: string | null;
-}): string[] {
-  const defaults = uniqueUrls(params.defaultUrls);
-
-  if (defaults.length === 0) {
-    throw new Error("resolveNearRpcManagerUrls requires at least one default RPC URL.");
-  }
-
-  const primary = normalizeUrl(params.primaryUrl) ?? defaults[0];
-
-  return uniqueUrls([primary, ...defaults, ...parseRpcFallbackUrls(params.fallbackRaw)]);
-}
-
-export function resolveNormalNearRpcManagerUrlsFromEnv(): string[] {
-  return resolveNearRpcManagerUrls({
-    primaryUrl: process.env.NEAR_RPC_URL ?? DEFAULT_NORMAL_NEAR_RPC_URL,
-    defaultUrls: DEFAULT_NORMAL_NEAR_RPC_URLS,
-    fallbackRaw: process.env.NEAR_RPC_FALLBACKS,
-  });
-}
-
-export function resolveArchivalNearRpcManagerUrlsFromEnv(): string[] {
-  return resolveNearRpcManagerUrls({
-    primaryUrl: process.env.NEAR_ARCHIVAL_RPC_URL ?? DEFAULT_ARCHIVAL_NEAR_RPC_URL,
-    defaultUrls: DEFAULT_ARCHIVAL_NEAR_RPC_URLS,
-    fallbackRaw: process.env.NEAR_ARCHIVAL_RPC_FALLBACKS,
-  });
+function isUnknownBlockMessage(message: string): boolean {
+  return (
+    message.includes("UNKNOWN_BLOCK") ||
+    message.includes("Unknown block") ||
+    message.includes("DB Not Found")
+  );
 }
 
 export class NearRpcManager {
@@ -134,7 +121,7 @@ export class NearRpcManager {
     this.blacklistDurationMs = options?.blacklistDurationMs ?? DEFAULT_BLACKLIST_DURATION_MS;
     this.baseDelayMs = options?.baseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.maxAttempts = options?.maxAttempts ?? Math.max(this.endpoints.length * 2, DEFAULT_RETRY_COUNT);
-    this.requestTimeoutMs = options?.requestTimeoutMs ?? resolveRequestTimeoutMs();
+    this.requestTimeoutMs = options?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.requestId = options?.requestId ?? DEFAULT_REQUEST_ID;
 
     if (this.endpoints.length === 0) {
@@ -180,29 +167,27 @@ export class NearRpcManager {
     return this.endpoints;
   }
 
-  private getCurrentEndpoint(): RpcEndpoint {
+  // Round-robin: advance `currentIndex` atomically on every call and return
+  // the endpoint that was at the previous index. JS is single-threaded, so
+  // concurrent callers entering this method sequentially get distinct
+  // endpoints (120 concurrent calls spread ~20 per endpoint across 6 URLs).
+  private pickNextEndpoint(): RpcEndpoint {
     const available = this.getAvailableEndpoints();
-
-    if (this.currentIndex >= available.length) {
-      this.currentIndex = 0;
-    }
-
-    return available[this.currentIndex];
-  }
-
-  private switchToNextEndpoint(): void {
-    const available = this.getAvailableEndpoints();
-
-    if (available.length <= 1) {
-      this.currentIndex = 0;
-      return;
-    }
-
+    const idx = this.currentIndex % available.length;
     this.currentIndex = (this.currentIndex + 1) % available.length;
+    return available[idx];
   }
 
   private isRateLimit(status: number, message: string): boolean {
-    return status === 429 || message.includes("rate") || message.includes("throttle");
+    if (status === 429) return true;
+    return (
+      message.includes("rate") ||
+      message.includes("throttle") ||
+      message.includes("usage limit") ||
+      message.includes("quota") ||
+      message.includes("too many requests") ||
+      message.includes("upgrade")
+    );
   }
 
   private isServerError(status: number): boolean {
@@ -221,28 +206,35 @@ export class NearRpcManager {
     );
   }
 
+  // Record a failure against an endpoint. Does not manipulate `currentIndex`
+  // — round-robin advancement happens in `pickNextEndpoint`. Blacklisting is
+  // what removes a failing endpoint from rotation (via `getAvailableEndpoints`
+  // filtering on `isBlacklisted`).
   private handleFailure(endpoint: RpcEndpoint, status: number | null, message: string): void {
     endpoint.failures += 1;
     endpoint.lastFailure = Date.now();
 
     const normalizedMessage = message.toLowerCase();
-    const shouldSwitchImmediately =
+    const shouldBlacklistImmediately =
       this.isRateLimit(status ?? 0, normalizedMessage) ||
       this.isServerError(status ?? 0) ||
       this.isConnectionError(normalizedMessage);
 
-    if (shouldSwitchImmediately || endpoint.failures >= this.maxFailures) {
+    if (shouldBlacklistImmediately || endpoint.failures >= this.maxFailures) {
       endpoint.isBlacklisted = true;
     }
-
-    this.switchToNextEndpoint();
   }
 
   async request<TResponse>(method: string, params: unknown, contextLabel: string): Promise<TResponse> {
     let lastError: Error | null = null;
+    // Track which endpoints responded with UNKNOWN_BLOCK-style errors so the
+    // caller can require majority consensus before treating a height as
+    // genuinely skipped.
+    const unknownBlockEndpoints = new Set<string>();
+    const healthyEndpointCount = this.endpoints.length;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      const endpoint = this.getCurrentEndpoint();
+      const endpoint = this.pickNextEndpoint();
       const abortController = new AbortController();
       const timeoutHandle = setTimeout(() => {
         abortController.abort(`timeout after ${this.requestTimeoutMs}ms`);
@@ -268,6 +260,9 @@ export class NearRpcManager {
           const responseSnippet = responseText.slice(0, 220).replace(/\s+/g, " ").trim();
           const message = `NEAR ${contextLabel} request failed (${response.status}) via ${endpoint.url}${responseSnippet ? `: ${responseSnippet}` : "."}`;
 
+          if (isUnknownBlockMessage(responseSnippet)) {
+            unknownBlockEndpoints.add(endpoint.url);
+          }
           lastError = new Error(message);
           this.handleFailure(endpoint, response.status, responseSnippet || message);
         } else {
@@ -279,6 +274,9 @@ export class NearRpcManager {
             const errorSnippet = JSON.stringify(payload.error).slice(0, 220).replace(/\s+/g, " ");
             const message = `NEAR ${contextLabel} RPC error via ${endpoint.url}${errorSnippet ? `: ${errorSnippet}` : "."}`;
 
+            if (isUnknownBlockMessage(errorSnippet)) {
+              unknownBlockEndpoints.add(endpoint.url);
+            }
             lastError = new Error(message);
             this.handleFailure(endpoint, response.status, errorSnippet || message);
           } else {
@@ -307,6 +305,12 @@ export class NearRpcManager {
       }
     }
 
-    throw lastError ?? new Error(`NEAR ${contextLabel} request failed.`);
+    const baseMessage = lastError?.message ?? `NEAR ${contextLabel} request failed.`;
+    throw new NearRpcExhaustedError(
+      baseMessage,
+      unknownBlockEndpoints,
+      healthyEndpointCount,
+      this.maxAttempts,
+    );
   }
 }

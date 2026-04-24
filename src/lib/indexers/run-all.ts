@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { collectFastAuthChainHealth } from "@/lib/indexers/fastauth-head-status";
 import { collectNearState } from "@/lib/indexers/near";
 import { collectFastAuthPublicKeyAccounts } from "@/lib/indexers/public-key-accounts";
 import type { IndexerRunResult } from "@/lib/indexers/types";
@@ -53,9 +54,11 @@ async function runIndexerWithLogs(params: {
 }
 
 export async function runAllIndexers(): Promise<IndexerRunResult[]> {
-  // The two indexers hit different upstreams (NEAR RPC vs FastNEAR public-key
-  // lookup) and write to disjoint tables, so they can run concurrently.
-  const [near, publicKeyAccounts] = await Promise.all([
+  // The collectors hit disjoint upstreams (NEAR RPC for the main backfill and
+  // chain-head probe, FastNEAR for public-key lookups) and write to disjoint
+  // tables, so they can run concurrently. The chain-health collector throttles
+  // itself internally so it doesn't actually fire on every tick.
+  const [near, publicKeyAccounts, chainHealth] = await Promise.all([
     runIndexerWithLogs({
       source: "near",
       run: () => collectNearState(prisma),
@@ -64,7 +67,11 @@ export async function runAllIndexers(): Promise<IndexerRunResult[]> {
       source: "fastauth_public_keys",
       run: () => collectFastAuthPublicKeyAccounts(prisma),
     }),
+    runIndexerWithLogs({
+      source: "fastauth_chain_health",
+      run: () => collectFastAuthChainHealth(prisma),
+    }),
   ]);
 
-  return [near, publicKeyAccounts];
+  return [near, publicKeyAccounts, chainHealth];
 }

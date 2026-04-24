@@ -46,37 +46,7 @@ Run the app:
 pnpm dev
 ```
 
-## 2. Google Closed Access (peersyst.org)
-
-Required env vars:
-
-- NEXTAUTH_URL
-- NEXTAUTH_SECRET
-- GOOGLE_CLIENT_ID
-- GOOGLE_CLIENT_SECRET
-- ALLOWED_GOOGLE_DOMAIN (default peersyst.org)
-
-Behavior:
-
-- Only Google logins from ALLOWED_GOOGLE_DOMAIN are accepted.
-- Google email must be provider-verified.
-- Unauthenticated users are redirected to /sign-in.
-- Non-domain users are denied during auth callback.
-
-Google Cloud OAuth client checklist (required):
-
-- Application type: Web application.
-- Authorized JavaScript origin: `http://localhost:3000`
-- Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
-
-If you get `Error 400: redirect_uri_mismatch`:
-
-- Ensure the redirect URI above exists exactly (character-by-character) in the same OAuth client used by `GOOGLE_CLIENT_ID`.
-- Ensure `NEXTAUTH_URL` is `http://localhost:3000` in local development.
-- Restart `pnpm dev` after changing `.env`.
-- Wait a few minutes for Google config propagation.
-
-## 3. Railway Postgres
+## 2. Railway Postgres
 
 Create a Railway Postgres service and copy its connection string to:
 
@@ -94,7 +64,7 @@ pnpm prisma:generate
 pnpm prisma migrate deploy
 ```
 
-## 4. Indexers
+## 3. Indexers
 
 This repo includes six collectors:
 
@@ -185,7 +155,7 @@ curl -X POST "${DASHBOARD_BASE_URL}/api/indexers/run" \
 	-H "x-indexer-signature: ${SIG}"
 ```
 
-## 5. Railway Deployment Notes
+## 4. Railway Deployment Notes
 
 Recommended Railway settings for web service:
 
@@ -211,7 +181,54 @@ Railway cron command example:
 TS=$(date +%s); SIG=$(printf "%s:/api/indexers/run" "$TS" | openssl dgst -sha256 -hmac "$INDEXER_CRON_SECRET" -hex | sed 's/^.* //'); curl -sS -X POST "$DASHBOARD_BASE_URL/api/indexers/run" -H "x-indexer-ts: $TS" -H "x-indexer-signature: $SIG"
 ```
 
-## 6. Data Tables
+## 5. Vercel Deployment (web frontend only)
+
+Deployment topology:
+
+- **Railway** hosts the Postgres database and the long-running indexer worker (`pnpm indexers:worker`). Do not change this.
+- **Vercel** hosts only the Next.js web dashboard. It reads the same Railway Postgres over the public connection URL. The `/api/indexers/run` endpoint is still compiled but unused from Vercel — the Railway worker keeps indexing on its own cadence.
+
+### Initial setup
+
+1. Import the repo into Vercel. The Next.js preset is auto-detected; no `vercel.json` is required.
+2. Set the following environment variables in the Vercel project (Production scope at minimum):
+   - `DATABASE_URL` — Railway Postgres **public** URL, with pooling params (see below).
+
+Vars you do **not** need on Vercel: `INDEXER_CRON_SECRET`, `INDEXER_ALLOWED_IPS`, `INDEXER_POLL_INTERVAL_MS`, any NEAR RPC / Auth0 / service-metrics / TVL variables — those belong to the Railway worker.
+
+### Database URL on Vercel
+
+Railway Postgres exposes two URLs:
+
+- **Private** (`postgres.railway.internal:5432`) — accessible only from other Railway services. The indexer worker uses this. **Do not put this on Vercel** — Vercel cannot reach Railway's private network.
+- **Public proxy** (`*.proxy.rlwy.net:<port>` or similar) — accessible from the internet. Vercel uses this.
+
+Serverless functions open a new DB connection per cold start. Without pooling, Railway Postgres will exhaust `max_connections` under dashboard traffic. Mitigations:
+
+- Append `?connection_limit=1&pool_timeout=20` to the Vercel `DATABASE_URL` (Prisma-side cap — each serverless instance will open at most one connection).
+- If your Railway Postgres plan exposes a PgBouncer-compatible endpoint, use it and add `&pgbouncer=true`.
+- Alternative: move the DB to a provider with built-in pooling (Neon, Supabase). Requires updating both Railway and Vercel `DATABASE_URL`s and running `pnpm prisma:migrate` against the new instance.
+
+Migrations (`pnpm prisma:migrate`) should continue to run from Railway or your local shell against the **direct** URL, never from Vercel build.
+
+### Build configuration
+
+- Build command and output are auto-detected. No overrides needed.
+- `output: "standalone"` in `next.config.ts` is Railway-oriented; Vercel ignores it.
+- Security headers and `poweredByHeader: false` ship to Vercel unchanged.
+
+## 6. Security Considerations
+
+The dashboard is **publicly accessible** — there is no auth layer. Treat any data displayed (relayer activity, public-key mappings, sign-event metadata) as public information. Do not surface secrets or operator-only fields here.
+
+Known accepted risks:
+
+- **CSP allows `'unsafe-inline'` for `script-src`.** Required by Next.js App Router server-component inlining. Nonce-based CSP would require proxy rewrites.
+- **IP allowlist (`INDEXER_ALLOWED_IPS`) trusts `x-forwarded-for`.** Safe behind Vercel or Railway's edge; unsafe behind untrusted proxy chains.
+
+Run `pnpm audit --prod` before each release to catch new advisories.
+
+## 7. Data Tables
 
 Prisma models included:
 

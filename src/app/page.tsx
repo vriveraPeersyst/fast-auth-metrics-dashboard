@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-
-import { LogoutButton } from "@/components/logout-button";
-import { allowedGoogleDomain, authOptions } from "@/lib/auth";
+import { Disclosure } from "@/components/disclosure";
+import { FastAuthLogo } from "@/components/fastauth-logo";
+import { LocalTime } from "@/components/local-time";
+import { MetricTabs } from "@/components/metric-tabs";
+import { NearblocksLink } from "@/components/nearblocks-link";
 import { getDashboardData } from "@/lib/dashboard-data";
 
 function formatAgeMinutes(ageMinutes: number | null): string {
@@ -45,19 +45,6 @@ function toProviderLabel(provider: "firebase" | "auth0"): string {
   return provider === "firebase" ? "Firebase" : "Auth0";
 }
 
-function toUptimePercent(status: "healthy" | "lagging" | "stale" | "no_data"): number {
-  switch (status) {
-    case "healthy":
-      return 100;
-    case "lagging":
-      return 70;
-    case "stale":
-      return 35;
-    default:
-      return 10;
-  }
-}
-
 function truncateMiddle(value: string | null | undefined, max = 18): string {
   if (!value) {
     return "-";
@@ -72,16 +59,88 @@ function truncateMiddle(value: string | null | undefined, max = 18): string {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-function formatIsoDate(date: Date | null | undefined): string {
-  if (!date) {
+function formatNumber(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+function formatSignedNumber(value: number): string {
+  if (value > 0) {
+    return `+${value.toLocaleString("en-US")}`;
+  }
+  return value.toLocaleString("en-US");
+}
+
+function formatDurationMinutes(minutes: number | null): string {
+  if (minutes === null) {
     return "-";
   }
 
-  return date.toISOString();
+  if (minutes < 1) {
+    return "<1m";
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+
+  if (hours < 24) {
+    return remaining === 0 ? `${hours}h` : `${hours}h ${remaining}m`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours === 0 ? `${days}d` : `${days}d ${remainingHours}h`;
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString("en-US");
+function toLagStatus(blocksBehind: number | null): "healthy" | "lagging" | "stale" | "no_data" {
+  if (blocksBehind === null) {
+    return "no_data";
+  }
+  if (blocksBehind <= 150) {
+    return "healthy";
+  }
+  if (blocksBehind <= 5_000) {
+    return "lagging";
+  }
+  return "stale";
+}
+
+function toChainHealthStatus(
+  successRatePct: number | null,
+  totalTransactions: number,
+  minutesSinceLastSuccess: number | null,
+): "healthy" | "lagging" | "stale" | "no_data" {
+  if (totalTransactions === 0 || successRatePct === null) {
+    // No activity in the window — fall back to liveness signal.
+    if (minutesSinceLastSuccess === null) {
+      return "no_data";
+    }
+    if (minutesSinceLastSuccess <= 30) {
+      return "healthy";
+    }
+    if (minutesSinceLastSuccess <= 180) {
+      return "lagging";
+    }
+    return "stale";
+  }
+
+  if (successRatePct >= 98) {
+    return "healthy";
+  }
+  if (successRatePct >= 90) {
+    return "lagging";
+  }
+  return "stale";
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+  return `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 }
 
 function formatUsd(value: number | null | undefined): string {
@@ -105,146 +164,216 @@ function formatMetricValue(value: number): string {
 }
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.email?.toLowerCase().endsWith(`@${allowedGoogleDomain}`)) {
-    redirect("/sign-in");
-  }
-
   const data = await getDashboardData();
-  const fastAuthCollector = data.collectorHealth.find((collector) => collector.source === "near");
 
   return (
     <main className="dashboardRoot">
       <header className="dashboardTopbar">
-        <div>
-          <p className="kicker">FastAuth Metrics Dashboard</p>
-          <h1>Private {allowedGoogleDomain} Ops View</h1>
-          <p className="metaLine">Signed in as {session.user.email}</p>
-        </div>
-        <div className="topbarActions">
-          <LogoutButton />
+        <div className="topbarBrand">
+          <h1><FastAuthLogo /></h1>
+          <p className="kicker" style={{ marginBottom: 0 }}>Metrics Dashboard</p>
         </div>
       </header>
 
+      <p className="sectionKicker">System status</p>
       <section className="statusFocusGrid">
         <article className="healthCard">
           <div className="healthCardHeader">
-            <h3>Fast Auth Status</h3>
-            <span className={`healthBadge healthBadge--${fastAuthCollector?.status ?? "no_data"}`}>
-              {toStatusLabel(fastAuthCollector?.status ?? "no_data")}
+            <h3>Indexer lag</h3>
+            <span className={`healthBadge healthBadge--${toLagStatus(data.indexerLag.blocksBehind)}`}>
+              {data.indexerLag.blocksBehind === null
+                ? "No data"
+                : `${formatSignedNumber(data.indexerLag.blocksBehind)} blocks`}
             </span>
           </div>
 
           <dl className="healthMetaList">
             <div>
-              <dt>Last write</dt>
+              <dt>Chain head</dt>
               <dd>
-                {fastAuthCollector?.lastWriteAt ? fastAuthCollector.lastWriteAt.toISOString() : "-"}
+                <NearblocksLink kind="block" value={data.indexerLag.chainHead} />
               </dd>
             </div>
             <div>
-              <dt>Checkpoint</dt>
-              <dd>{fastAuthCollector?.checkpoint ?? "-"}</dd>
+              <dt>Scanned from</dt>
+              <dd>
+                <NearblocksLink kind="block" value={data.indexerLag.backfillStartHeight} />
+              </dd>
+            </div>
+            <div>
+              <dt>Scanned to</dt>
+              <dd>
+                <NearblocksLink kind="block" value={data.indexerLag.scannedHeight} />
+              </dd>
+            </div>
+            <div>
+              <dt>Time behind</dt>
+              <dd>{formatDurationMinutes(data.indexerLag.minutesBehind)}</dd>
+            </div>
+            <div>
+              <dt>Last indexed block</dt>
+              <dd>
+                <LocalTime iso={data.indexerLag.latestIndexedBlockTimestamp} />
+              </dd>
             </div>
           </dl>
 
-          <div className="uptimeBarTrack" aria-hidden>
-            <div
-              className={`uptimeBarFill uptimeBarFill--${fastAuthCollector?.status ?? "no_data"}`}
-              style={{ width: `${toUptimePercent(fastAuthCollector?.status ?? "no_data")}%` }}
-            />
+          <p className="healthDetails">
+            Gap between the NEAR chain head and the last height the indexer has fully scanned. The
+            24h window is measured against <code>blockTimestamp</code>, so it stays at zero until
+            the indexer catches up to the last 24 hours of blocks.
+          </p>
+        </article>
+
+        <article className="healthCard">
+          <div className="healthCardHeader">
+            <h3>Fast Auth Status</h3>
+            <span
+              className={`healthBadge healthBadge--${toChainHealthStatus(
+                data.fastAuthChainHealth?.successRatePct ?? null,
+                data.fastAuthChainHealth?.totalTransactions ?? 0,
+                data.fastAuthChainHealth?.minutesSinceLastSuccess ?? null,
+              )}`}
+            >
+              {data.fastAuthChainHealth
+                ? formatPercent(data.fastAuthChainHealth.successRatePct)
+                : "No data"}
+            </span>
           </div>
+
+          <dl className="healthMetaList">
+            <div>
+              <dt>Window</dt>
+              <dd>
+                {data.fastAuthChainHealth ? (
+                  <>
+                    <NearblocksLink
+                      kind="block"
+                      value={data.fastAuthChainHealth.windowStartHeight}
+                    />
+                    {" – "}
+                    <NearblocksLink
+                      kind="block"
+                      value={data.fastAuthChainHealth.windowEndHeight}
+                    />
+                    {" "}
+                    <span className="healthMetaHint">
+                      ({data.fastAuthChainHealth.windowBlocks} blocks)
+                    </span>
+                  </>
+                ) : (
+                  "-"
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>FastAuth tx in window</dt>
+              <dd>
+                {data.fastAuthChainHealth
+                  ? `${data.fastAuthChainHealth.successfulTransactions} ok / ` +
+                    `${data.fastAuthChainHealth.failedTransactions} failed ` +
+                    `(${data.fastAuthChainHealth.totalTransactions} total)`
+                  : "-"}
+              </dd>
+            </div>
+            <div>
+              <dt>Distinct relayers</dt>
+              <dd>{data.fastAuthChainHealth?.distinctRelayers ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Last success</dt>
+              <dd>
+                {data.fastAuthChainHealth?.lastSuccessTxHash ? (
+                  <NearblocksLink kind="tx" value={data.fastAuthChainHealth.lastSuccessTxHash}>
+                    <LocalTime iso={data.fastAuthChainHealth.lastSuccessTimestamp} />
+                  </NearblocksLink>
+                ) : (
+                  "-"
+                )}
+                {data.fastAuthChainHealth?.minutesSinceLastSuccess !== null &&
+                data.fastAuthChainHealth?.minutesSinceLastSuccess !== undefined ? (
+                  <>
+                    {" "}
+                    <span className="healthMetaHint">
+                      ({formatDurationMinutes(
+                        data.fastAuthChainHealth.minutesSinceLastSuccess,
+                      )} ago)
+                    </span>
+                  </>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt>Probed at</dt>
+              <dd>
+                <LocalTime iso={data.fastAuthChainHealth?.computedAt ?? null} />
+              </dd>
+            </div>
+          </dl>
+
+          <p className="healthDetails">
+            Live probe of the last {data.fastAuthChainHealth?.windowBlocks ?? "~"} NEAR blocks from
+            chain head. Success rate is the share of FastAuth transactions whose chunk-level
+            execution outcome did not report a failure. This metric is independent of the indexer
+            backfill — it always reflects current chain activity.
+          </p>
         </article>
       </section>
 
+      <p className="sectionKicker">Overview</p>
       <section className="metricsGrid">
-        <article className="metricCard">
-          <h2>Total accounts</h2>
-          <p>{data.accountsOverview.totalAccounts}</p>
-        </article>
+        <MetricTabs
+          title="Accounts"
+          headline={{ label: "Total accounts", value: data.accountsOverview.totalAccounts }}
+          rows={[
+            {
+              label: "Created",
+              values: {
+                "24h": data.accountsOverview.created.last24h,
+                "7d": data.accountsOverview.created.last7d,
+                "30d": data.accountsOverview.created.last30d,
+              },
+            },
+            {
+              label: "Active",
+              values: {
+                "24h": data.accountsOverview.active.last24h,
+                "7d": data.accountsOverview.active.last7d,
+                "30d": data.accountsOverview.active.last30d,
+              },
+            },
+          ]}
+        />
 
-        <article className="metricCard">
-          <h2>Created (24h)</h2>
-          <p>{data.accountsOverview.created.last24h}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Created (7d)</h2>
-          <p>{data.accountsOverview.created.last7d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Created (30d)</h2>
-          <p>{data.accountsOverview.created.last30d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Active (24h)</h2>
-          <p>{data.accountsOverview.active.last24h}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Active (7d)</h2>
-          <p>{data.accountsOverview.active.last7d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Active (30d)</h2>
-          <p>{data.accountsOverview.active.last30d}</p>
-        </article>
-      </section>
-
-      <section className="metricsGrid">
-        <article className="metricCard">
-          <h2>Total signed (24h)</h2>
-          <p>{data.transactionOverview.signed.last24h}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total signed (7d)</h2>
-          <p>{data.transactionOverview.signed.last7d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total signed (30d)</h2>
-          <p>{data.transactionOverview.signed.last30d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total failed (24h)</h2>
-          <p>{data.transactionOverview.failed.last24h}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total failed (7d)</h2>
-          <p>{data.transactionOverview.failed.last7d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total failed (30d)</h2>
-          <p>{data.transactionOverview.failed.last30d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total (success + failed) 24h</h2>
-          <p>{data.transactionOverview.total.last24h}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total (success + failed) 7d</h2>
-          <p>{data.transactionOverview.total.last7d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Total (success + failed) 30d</h2>
-          <p>{data.transactionOverview.total.last30d}</p>
-        </article>
-
-        <article className="metricCard">
-          <h2>Latest NEAR final block</h2>
-          <p>{data.latestNearFinalBlock ?? "-"}</p>
-        </article>
+        <MetricTabs
+          title="Transactions"
+          rows={[
+            {
+              label: "Signed",
+              values: {
+                "24h": data.transactionOverview.signed.last24h,
+                "7d": data.transactionOverview.signed.last7d,
+                "30d": data.transactionOverview.signed.last30d,
+              },
+            },
+            {
+              label: "Failed",
+              values: {
+                "24h": data.transactionOverview.failed.last24h,
+                "7d": data.transactionOverview.failed.last7d,
+                "30d": data.transactionOverview.failed.last30d,
+              },
+            },
+            {
+              label: "Total",
+              values: {
+                "24h": data.transactionOverview.total.last24h,
+                "7d": data.transactionOverview.total.last7d,
+                "30d": data.transactionOverview.total.last30d,
+              },
+            },
+          ]}
+        />
       </section>
 
       <section className="logsPanel">
@@ -275,7 +404,9 @@ export default async function Home() {
               <tbody>
                 {data.relayerBreakdown.map((relayer) => (
                   <tr key={relayer.address}>
-                    <td>{relayer.address}</td>
+                    <td>
+                      <NearblocksLink kind="account" value={relayer.address} />
+                    </td>
                     <td>{relayer.transactions}</td>
                     <td>{relayer.feesPaidGasBurnt ?? "-"}</td>
                     <td>{relayer.projectOwner ?? "-"}</td>
@@ -285,7 +416,12 @@ export default async function Home() {
                     <td>{relayer.sponsoredUniqueAccounts.total}</td>
                     <td>
                       {relayer.uniqueAccountsList.length > 0
-                        ? relayer.uniqueAccountsList.join(", ")
+                        ? relayer.uniqueAccountsList.map((account, index) => (
+                            <span key={account}>
+                              {index > 0 ? ", " : null}
+                              <NearblocksLink kind="account" value={account} />
+                            </span>
+                          ))
                         : "-"}
                     </td>
                     <td>{relayer.tvl ?? "N/A"}</td>
@@ -316,7 +452,9 @@ export default async function Home() {
               <dl className="healthMetaList">
                 <div>
                   <dt>Last write</dt>
-                  <dd>{collector.lastWriteAt ? collector.lastWriteAt.toISOString() : "-"}</dd>
+                  <dd>
+                    <LocalTime iso={collector.lastWriteAt} />
+                  </dd>
                 </div>
                 <div>
                   <dt>Freshness</dt>
@@ -359,13 +497,23 @@ export default async function Home() {
               <tbody>
                 {data.recentNearTransactions.map((tx) => (
                   <tr key={tx.txHash}>
-                    <td>{tx.blockHeight ?? "-"}</td>
-                    <td>{tx.blockTimestamp ? tx.blockTimestamp.toISOString() : "-"}</td>
-                    <td>{tx.signerAccountId ?? "-"}</td>
-                    <td>{tx.receiverId ?? "-"}</td>
+                    <td>
+                      <NearblocksLink kind="block" value={tx.blockHeight} />
+                    </td>
+                    <td>
+                      <LocalTime iso={tx.blockTimestamp} />
+                    </td>
+                    <td>
+                      <NearblocksLink kind="account" value={tx.signerAccountId} />
+                    </td>
+                    <td>
+                      <NearblocksLink kind="account" value={tx.receiverId} />
+                    </td>
                     <td>{tx.methodName ?? "-"}</td>
                     <td>{tx.executionStatus ?? "-"}</td>
-                    <td>{tx.txHash}</td>
+                    <td>
+                      <NearblocksLink kind="tx" value={tx.txHash} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -374,12 +522,107 @@ export default async function Home() {
         )}
       </section>
 
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Database tables</h2>
-          <p>Row counts across the Prisma schema</p>
-        </div>
+      <p className="sectionKicker">Developer</p>
 
+      <Disclosure title="Recent FastAuth sign events" description="Latest rows from fastauth_sign_events">
+        {data.recentSignEvents.length === 0 ? (
+          <p className="emptyState">No FastAuth sign events indexed yet.</p>
+        ) : (
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Block ts</th>
+                  <th>Block #</th>
+                  <th>Relayer</th>
+                  <th>Guard</th>
+                  <th>Algo</th>
+                  <th>Domain</th>
+                  <th>Derived pubkey</th>
+                  <th>Status</th>
+                  <th>Tx hash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recentSignEvents.map((event) => (
+                  <tr key={event.id}>
+                    <td>
+                      <LocalTime iso={event.blockTimestamp} />
+                    </td>
+                    <td>
+                      <NearblocksLink kind="block" value={event.blockHeight} />
+                    </td>
+                    <td>
+                      <NearblocksLink kind="account" value={event.relayerAccountId}>
+                        {truncateMiddle(event.relayerAccountId, 22)}
+                      </NearblocksLink>
+                    </td>
+                    <td>{event.guardName ?? "-"}</td>
+                    <td>{event.algorithm ?? "-"}</td>
+                    <td>{event.userDomainId ?? "-"}</td>
+                    <td>{truncateMiddle(event.userDerivedPublicKey, 20)}</td>
+                    <td>{event.executionStatus ?? "-"}</td>
+                    <td>
+                      <NearblocksLink kind="tx" value={event.txHash}>
+                        {truncateMiddle(event.txHash, 18)}
+                      </NearblocksLink>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Disclosure>
+
+      <Disclosure title="Public-key accounts" description="Latest rows from fastauth_public_key_accounts">
+        {data.topPublicKeyAccounts.length === 0 ? (
+          <p className="emptyState">No public-key account mappings indexed yet.</p>
+        ) : (
+          <div className="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Public key</th>
+                  <th>Account</th>
+                  <th>Key path</th>
+                  <th>Predecessor</th>
+                  <th>Domain</th>
+                  <th>First seen</th>
+                  <th>Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.topPublicKeyAccounts.map((row) => (
+                  <tr key={`${row.publicKey}-${row.accountId}`}>
+                    <td>{truncateMiddle(row.publicKey, 22)}</td>
+                    <td>
+                      <NearblocksLink kind="account" value={row.accountId}>
+                        {truncateMiddle(row.accountId, 22)}
+                      </NearblocksLink>
+                    </td>
+                    <td>{row.keyPath ?? "-"}</td>
+                    <td>
+                      <NearblocksLink kind="account" value={row.predecessorId}>
+                        {truncateMiddle(row.predecessorId, 18)}
+                      </NearblocksLink>
+                    </td>
+                    <td>{row.domainId ?? "-"}</td>
+                    <td>
+                      <LocalTime iso={row.firstSeenAt} />
+                    </td>
+                    <td>
+                      <LocalTime iso={row.lastSeenAt} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Disclosure>
+
+      <Disclosure title="Database tables" description="Row counts across the Prisma schema">
         <div className="metricsGrid metricsGrid--dense">
           <article className="metricCard metricCard--small">
             <h2>near_transactions</h2>
@@ -406,106 +649,9 @@ export default async function Home() {
             <p>{formatNumber(data.tableCounts.indexerCheckpoints)}</p>
           </article>
         </div>
-      </section>
+      </Disclosure>
 
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Recent FastAuth sign events</h2>
-          <p>Latest rows from fastauth_sign_events</p>
-        </div>
-
-        {data.recentSignEvents.length === 0 ? (
-          <p className="emptyState">No FastAuth sign events indexed yet.</p>
-        ) : (
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Block ts</th>
-                  <th>Block #</th>
-                  <th>Relayer</th>
-                  <th>Guard</th>
-                  <th>Provider</th>
-                  <th>Algo</th>
-                  <th>Domain</th>
-                  <th>Dapp</th>
-                  <th>Sponsored acct</th>
-                  <th>Derived pubkey</th>
-                  <th>Status</th>
-                  <th>Gas burnt</th>
-                  <th>Tx hash</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentSignEvents.map((event) => (
-                  <tr key={event.id}>
-                    <td>{formatIsoDate(event.blockTimestamp)}</td>
-                    <td>{event.blockHeight}</td>
-                    <td>{truncateMiddle(event.relayerAccountId, 22)}</td>
-                    <td>{event.guardName ?? "-"}</td>
-                    <td>{event.providerType}</td>
-                    <td>{event.algorithm ?? "-"}</td>
-                    <td>{event.userDomainId ?? "-"}</td>
-                    <td>{truncateMiddle(event.projectDappId, 18)}</td>
-                    <td>{truncateMiddle(event.sponsoredAccountId, 22)}</td>
-                    <td>{truncateMiddle(event.userDerivedPublicKey, 20)}</td>
-                    <td>{event.executionStatus ?? "-"}</td>
-                    <td>{event.gasBurnt ?? "-"}</td>
-                    <td>{truncateMiddle(event.txHash, 18)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Public-key accounts</h2>
-          <p>Latest rows from fastauth_public_key_accounts</p>
-        </div>
-
-        {data.topPublicKeyAccounts.length === 0 ? (
-          <p className="emptyState">No public-key account mappings indexed yet.</p>
-        ) : (
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Public key</th>
-                  <th>Account</th>
-                  <th>Key path</th>
-                  <th>Predecessor</th>
-                  <th>Domain</th>
-                  <th>First seen</th>
-                  <th>Last seen</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topPublicKeyAccounts.map((row) => (
-                  <tr key={`${row.publicKey}-${row.accountId}`}>
-                    <td>{truncateMiddle(row.publicKey, 22)}</td>
-                    <td>{truncateMiddle(row.accountId, 22)}</td>
-                    <td>{row.keyPath ?? "-"}</td>
-                    <td>{truncateMiddle(row.predecessorId, 18)}</td>
-                    <td>{row.domainId ?? "-"}</td>
-                    <td>{formatIsoDate(row.firstSeenAt)}</td>
-                    <td>{formatIsoDate(row.lastSeenAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Indexer checkpoints</h2>
-          <p>Key/value state from indexer_checkpoints</p>
-        </div>
-
+      <Disclosure title="Indexer checkpoints" description="Key/value state from indexer_checkpoints">
         {data.indexerCheckpoints.length === 0 ? (
           <p className="emptyState">No checkpoints recorded yet.</p>
         ) : (
@@ -523,14 +669,20 @@ export default async function Home() {
                   <tr key={checkpoint.key}>
                     <td>{checkpoint.key}</td>
                     <td>{truncateMiddle(checkpoint.value, 48)}</td>
-                    <td>{formatIsoDate(checkpoint.updatedAt)}</td>
+                    <td>
+                      <LocalTime iso={checkpoint.updatedAt} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </section>
+      </Disclosure>
+      <footer className="dashboardFooter">
+        <span>Built by Peersyst</span>
+        <span>NEAR Protocol</span>
+      </footer>
     </main>
   );
 }

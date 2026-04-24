@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Expandable tabs</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  /* ---------- A. Accordion (stacked expandable rows) ---------- */
+  .accordion {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  details.row {
+    border-bottom: 1px solid var(--color-border);
+    transition: background 160ms ease;
+  }
+  details.row:last-child { border-bottom: 0; }
+  details.row[open] { background: var(--color-canvas); }
+
+  details.row > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto 24px;
+    gap: 16px;
+    align-items: center;
+    transition: background 120ms ease;
+  }
+  details.row > summary::-webkit-details-marker { display: none; }
+  details.row > summary:hover { background: var(--color-surface-muted); }
+  details.row[open] > summary { background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+
+  .row-index {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--color-ink-muted);
+    text-transform: uppercase;
+  }
+  .row-title {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .row-title .t {
+    font-size: 16px; line-height: 22px; font-weight: 600; letter-spacing: -0.01em;
+    color: var(--color-ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-title .d {
+    font-size: 13px; line-height: 18px; color: var(--color-ink-subtle);
+  }
+  details.row[open] .row-title .t { color: var(--color-ink); }
+
+  .row-stat {
+    font-family: var(--font-mono);
+    font-size: 13px; font-weight: 500; color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    padding-left: 20px;
+    border-left: 1px solid var(--color-border);
+  }
+  .row-stat .s { display: block; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-muted); font-weight: 500; margin-bottom: 2px; }
+
+  .badge { border-radius: var(--radius-pill); font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 4px 10px; white-space: nowrap; }
+  .badge--ok   { background: var(--color-status-ok-bg);   color: var(--color-status-ok); }
+  .badge--warn { background: var(--color-status-warn-bg); color: var(--color-status-warn); }
+  .badge--err  { background: var(--color-status-err-bg);  color: var(--color-status-err); }
+
+  /* Caret */
+  .caret {
+    width: 20px; height: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--color-ink-subtle);
+    transition: transform 180ms ease, color 120ms ease;
+  }
+  details.row[open] .caret { transform: rotate(90deg); color: var(--color-ink); }
+  .caret svg { display: block; }
+
+  /* Body of an expanded row */
+  .row-body {
+    padding: 0 24px 24px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 32px;
+    background: var(--color-canvas);
+  }
+  .row-body .prose { padding-top: 20px; }
+  .row-body .prose p { font-size: 14px; line-height: 24px; color: var(--color-ink); margin: 0 0 12px; max-width: 64ch; }
+  .row-body .prose p:last-child { margin-bottom: 0; }
+  .row-body .meta {
+    padding-top: 20px; border-left: 1px dashed var(--color-border-subtle); padding-left: 24px;
+    display: grid; gap: 10px; align-content: start;
+  }
+  .row-body .meta dt { font-size: 12px; color: var(--color-ink-muted); font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; }
+  .row-body .meta dd { margin: 2px 0 0; font-family: var(--font-mono); font-size: 13px; color: var(--color-ink); word-break: break-all; }
+
+  .btn-ghost { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px; border-radius: var(--radius-pill); background: var(--color-surface); border: 1px solid var(--color-border); font: inherit; font-size: 13px; font-weight: 500; color: var(--color-ink); cursor: pointer; text-decoration: none; }
+  .btn-ghost:hover { background: var(--color-surface-muted); }
+  .btn-primary { background: var(--color-mint); border-color: transparent; }
+  .btn-primary:hover { background: var(--color-mint-light); }
+
+  /* Active-left indicator (mint) when open */
+  details.row { position: relative; }
+  details.row[open]::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color-mint);
+  }
+
+  /* ---------- B. Horizontal tab strip with expandable panel ---------- */
+  .tabsCard {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+  }
+  .tabsStrip {
+    display: flex; gap: 0;
+    padding: 12px 12px 0;
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto;
+  }
+  .tab {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    padding: 12px 18px 14px;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500;
+    color: var(--color-ink-subtle);
+    display: inline-flex; align-items: center; gap: 10px;
+    border-radius: 10px 10px 0 0;
+    position: relative;
+    white-space: nowrap;
+    transition: color 120ms ease, background 120ms ease;
+  }
+  .tab:hover { color: var(--color-ink); background: var(--color-surface-muted); }
+  .tab[aria-selected="true"] {
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    font-weight: 700;
+  }
+  .tab[aria-selected="true"]::after {
+    content: "";
+    position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
+    background: var(--color-mint);
+    border-radius: 2px 2px 0 0;
+  }
+  .tab .count {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    background: var(--color-surface-muted); color: var(--color-ink-subtle);
+    padding: 2px 8px; border-radius: var(--radius-pill); letter-spacing: 0.04em;
+  }
+  .tab[aria-selected="true"] .count { background: var(--color-mint); color: var(--color-ink); }
+
+  .tabPanel { padding: 0; display: none; }
+  .tabPanel[data-active="true"] { display: block; }
+
+  /* Controls row inside tab panel */
+  .panelTop {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .panelTop h3 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; }
+  .panelTop p { margin: 4px 0 0; color: var(--color-ink-subtle); font-size: 13px; line-height: 18px; }
+  .panelTop .titleCol { min-width: 0; }
+  .panelTop .actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  /* Expand/collapse all control inside accordion */
+  .accordionHead {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 24px; border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .accordionHead h3 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .accordionHead .ctrl { display: flex; gap: 8px; }
+  .linkBtn {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500;
+    color: var(--color-ink-subtle);
+    padding: 6px 8px; border-radius: 6px;
+  }
+  .linkBtn:hover { color: var(--color-ink); background: var(--color-surface-muted); }
+
+  /* Empty state inside body */
+  .empty { color: var(--color-ink-muted); font-size: 13px; padding-top: 20px; font-family: var(--font-mono); }
+
+  table.mini { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.mini th, table.mini td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 12px; line-height: 18px; }
+  table.mini tr:last-child td { border-bottom: 0; }
+  table.mini th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-ink-subtle); font-weight: 500; background: var(--color-surface-muted); }
+
+  /* mobile */
+  @media (max-width: 720px) {
+    details.row > summary { grid-template-columns: 28px 1fr auto 20px; }
+    .row-stat { display: none; }
+    .row-body { grid-template-columns: 1fr; }
+    .row-body .meta { border-left: 0; padding-left: 0; border-top: 1px dashed var(--color-border-subtle); padding-top: 16px; }
+  }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 09</div>
+  <h1 class="page">Expandable tabs</h1>
+  <p class="lede">Two patterns: a stacked accordion for dense operator lists (relayers, collectors, checkpoints) and a horizontal tab strip for view-switching. Both keep mint as the active signal — never decorative.</p>
+
+  <h2 class="section">A · Accordion — stacked expandable rows</h2>
+  <div class="accordion" id="accordionA">
+    <div class="accordionHead">
+      <h3>Relayer breakdown</h3>
+      <div class="ctrl">
+        <button class="linkBtn" data-action="expandAll">Expand all</button>
+        <button class="linkBtn" data-action="collapseAll">Collapse all</button>
+      </div>
+    </div>
+
+    <details class="row" open>
+      <summary>
+        <span class="row-index">01</span>
+        <div class="row-title">
+          <span class="t">relayer-a.near</span>
+          <span class="d">Peersyst · project owner</span>
+        </div>
+        <div class="row-stat"><span class="s">Txns · 24h</span>1,482</div>
+        <span class="badge badge--ok">Healthy</span>
+        <span class="caret"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="row-body">
+        <div class="prose">
+          <p>Primary relayer servicing the FastAuth flagship integration. 24h window shows stable success rate with no chunk-level failures; gas usage within normal bounds.</p>
+          <p>Sponsored unique accounts growing ~12% week-over-week — likely tied to the April onboarding cohort.</p>
+          <p style="margin-top:16px;">
+            <a class="btn-primary btn-ghost" href="#">Open relayer page</a>
+            <a class="btn-ghost" href="#" style="margin-left:8px">Copy address</a>
+          </p>
+        </div>
+        <dl class="meta">
+          <div><dt>Address</dt><dd>relayer-a.near</dd></div>
+          <div><dt>Fees paid (24h)</dt><dd>2.41 NEAR</dd></div>
+          <div><dt>Sponsored unique · 7d</dt><dd>4,108</dd></div>
+          <div><dt>Sponsored unique · total</dt><dd>31,402</dd></div>
+          <div><dt>TVL</dt><dd>$182,441.20</dd></div>
+        </dl>
+      </div>
+    </details>
+
+    <details class="row">
+      <summary>
+        <span class="row-index">02</span>
+        <div class="row-title">
+          <span class="t">relayer-b.near</span>
+          <span class="d">Partner integration · community</span>
+        </div>
+        <div class="row-stat"><span class="s">Txns · 24h</span>604</div>
+        <span class="badge badge--warn">Lagging</span>
+        <span class="caret"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="row-body">
+        <div class="prose">
+          <p>Noticeable drop in successful signs over the last 4 hours. Four failed transactions clustered around block 210,481,895. Check upstream Auth0 health — this relayer routes most of its guard checks through it.</p>
+        </div>
+        <dl class="meta">
+          <div><dt>Address</dt><dd>relayer-b.near</dd></div>
+          <div><dt>Failed · 24h</dt><dd>7</dd></div>
+          <div><dt>Sponsored unique · 24h</dt><dd>214</dd></div>
+          <div><dt>Last success</dt><dd>12m ago</dd></div>
+        </dl>
+      </div>
+    </details>
+
+    <details class="row">
+      <summary>
+        <span class="row-index">03</span>
+        <div class="row-title">
+          <span class="t">relayer-c.near</span>
+          <span class="d">Internal · staging</span>
+        </div>
+        <div class="row-stat"><span class="s">Txns · 24h</span>0</div>
+        <span class="badge badge--err">Stale</span>
+        <span class="caret"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="row-body">
+        <div class="prose">
+          <p class="empty">No transactions in window. Last observed activity 4d 6h ago.</p>
+        </div>
+        <dl class="meta">
+          <div><dt>Address</dt><dd>relayer-c.near</dd></div>
+          <div><dt>Last success</dt><dd>4d 6h ago</dd></div>
+          <div><dt>TVL</dt><dd>N/A</dd></div>
+        </dl>
+      </div>
+    </details>
+
+    <details class="row">
+      <summary>
+        <span class="row-index">04</span>
+        <div class="row-title">
+          <span class="t">relayer-d.near</span>
+          <span class="d">Third-party · experimental</span>
+        </div>
+        <div class="row-stat"><span class="s">Txns · 24h</span>38</div>
+        <span class="badge badge--ok">Healthy</span>
+        <span class="caret"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="row-body">
+        <div class="prose"><p>Low but consistent traffic. Still in observation window.</p></div>
+        <dl class="meta">
+          <div><dt>Address</dt><dd>relayer-d.near</dd></div>
+          <div><dt>Sponsored unique · 24h</dt><dd>11</dd></div>
+        </dl>
+      </div>
+    </details>
+  </div>
+
+  <h2 class="section">B · Horizontal tabs with expandable panel</h2>
+  <div class="tabsCard" id="tabsB">
+    <div class="tabsStrip" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="overview">Overview <span class="count">—</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="txns">Transactions <span class="count">9,408</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="relayers">Relayers <span class="count">14</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="keys">Public keys <span class="count">2,104</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="checkpoints">Checkpoints <span class="count">6</span></button>
+    </div>
+
+    <div class="tabPanel" data-tab="overview" data-active="true">
+      <div class="panelTop">
+        <div class="titleCol">
+          <h3>Last 24h — overview</h3>
+          <p>Rollup of sign events, relayer activity, and indexer progress.</p>
+        </div>
+        <div class="actions">
+          <button class="btn-ghost">Export CSV</button>
+          <button class="btn-ghost btn-primary">Refresh</button>
+        </div>
+      </div>
+      <div style="padding: 20px 24px;">
+        <table class="mini">
+          <thead><tr><th>Metric</th><th>24h</th><th>7d</th><th>30d</th></tr></thead>
+          <tbody>
+            <tr><td>Signed</td><td>9,408</td><td>64,192</td><td>271,883</td></tr>
+            <tr><td>Failed</td><td>84</td><td>412</td><td>1,901</td></tr>
+            <tr><td>Unique sponsored accounts</td><td>1,209</td><td>6,821</td><td>18,402</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tabPanel" data-tab="txns">
+      <div class="panelTop">
+        <div class="titleCol"><h3>Recent NEAR transactions</h3><p>All indexed transactions in scanned blocks.</p></div>
+        <div class="actions"><button class="btn-ghost">Filter</button></div>
+      </div>
+      <div style="padding: 20px 24px;"><p style="color:var(--color-ink-subtle);font-size:13px;">— transaction table goes here —</p></div>
+    </div>
+
+    <div class="tabPanel" data-tab="relayers">
+      <div class="panelTop">
+        <div class="titleCol"><h3>Relayer breakdown</h3><p>Sponsored coverage and relayer activity.</p></div>
+        <div class="actions"><button class="btn-ghost">Export</button></div>
+      </div>
+      <div style="padding: 20px 24px;"><p style="color:var(--color-ink-subtle);font-size:13px;">— relayer list —</p></div>
+    </div>
+
+    <div class="tabPanel" data-tab="keys">
+      <div class="panelTop">
+        <div class="titleCol"><h3>Public-key accounts</h3><p>Latest rows from <code style="font-family:var(--font-mono)">fastauth_public_key_accounts</code>.</p></div>
+        <div class="actions"></div>
+      </div>
+      <div style="padding: 20px 24px;"><p style="color:var(--color-ink-subtle);font-size:13px;">— key mappings —</p></div>
+    </div>
+
+    <div class="tabPanel" data-tab="checkpoints">
+      <div class="panelTop">
+        <div class="titleCol"><h3>Indexer checkpoints</h3><p>Key/value state from the indexer.</p></div>
+        <div class="actions"></div>
+      </div>
+      <div style="padding: 20px 24px;"><p style="color:var(--color-ink-subtle);font-size:13px;">— checkpoints list —</p></div>
+    </div>
+  </div>
+
+<script>
+  // Accordion — expand / collapse all
+  (function () {
+    const root = document.getElementById('accordionA');
+    if (!root) return;
+    root.querySelectorAll('.linkBtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const open = btn.dataset.action === 'expandAll';
+        root.querySelectorAll('details.row').forEach(d => { d.open = open; });
+      });
+    });
+  })();
+
+  // Tabs — switch active panel
+  (function () {
+    const root = document.getElementById('tabsB');
+    if (!root) return;
+    const tabs = root.querySelectorAll('.tab');
+    const panels = root.querySelectorAll('.tabPanel');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.setAttribute('aria-selected', t === tab ? 'true' : 'false'));
+        panels.forEach(p => p.setAttribute('data-active', p.dataset.tab === tab.dataset.tab ? 'true' : 'false'));
+      });
+    });
+  })();
+</script>
+</body>
+</html>

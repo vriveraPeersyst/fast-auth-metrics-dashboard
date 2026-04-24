@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tables</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 32px; box-shadow: var(--shadow-card); }
+  .panelTitle { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; margin-bottom: 24px; }
+  .panelTitle h2 { font-size: 22px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .panelTitle p { color: var(--color-ink-subtle); font-size: 14px; line-height: 24px; margin: 0; }
+
+  .tableWrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th { color: var(--color-ink-subtle); font-family: var(--font-mono); font-weight: 500; font-size: 11px; line-height: 16px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--color-surface-muted); }
+  td { color: var(--color-ink); font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+  tbody tr:hover { background: var(--color-canvas); }
+
+  .explorerLink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--color-ink-muted); padding-bottom: 1px; }
+  .explorerLink:hover { border-bottom-color: var(--color-mint); border-bottom-style: solid; }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 07</div>
+  <h1 class="page">Tables</h1>
+  <p class="lede">Mono everywhere. Header on surface-muted, rows on surface, hover tint on canvas. Explorer links use a dotted underline that goes solid mint on hover.</p>
+
+  <section class="panel">
+    <div class="panelTitle">
+      <h2>Recent NEAR transactions</h2>
+      <p>All indexed transactions in scanned blocks</p>
+    </div>
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr><th>Block</th><th>Timestamp</th><th>Signer</th><th>Receiver</th><th>Method</th><th>Status</th><th>Tx Hash</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><a class="explorerLink">210,481,902</a></td><td>2026-04-22 18:03</td><td><a class="explorerLink">alice.near</a></td><td><a class="explorerLink">fastauth.near</a></td><td>sign</td><td>SUCCESS</td><td><a class="explorerLink">7b3f…a91c</a></td></tr>
+          <tr><td><a class="explorerLink">210,481,901</a></td><td>2026-04-22 18:03</td><td><a class="explorerLink">relayer-a.near</a></td><td><a class="explorerLink">fastauth.near</a></td><td>sign</td><td>SUCCESS</td><td><a class="explorerLink">ab91…0c42</a></td></tr>
+          <tr><td><a class="explorerLink">210,481,899</a></td><td>2026-04-22 18:02</td><td><a class="explorerLink">bob.near</a></td><td><a class="explorerLink">fastauth.near</a></td><td>derive_key</td><td>SUCCESS</td><td><a class="explorerLink">91ab…f334</a></td></tr>
+          <tr><td><a class="explorerLink">210,481,895</a></td><td>2026-04-22 18:02</td><td><a class="explorerLink">relayer-b.near</a></td><td><a class="explorerLink">fastauth.near</a></td><td>sign</td><td>FAILURE</td><td><a class="explorerLink">0c4d…71aa</a></td></tr>
+          <tr><td><a class="explorerLink">210,481,890</a></td><td>2026-04-22 18:01</td><td><a class="explorerLink">carol.near</a></td><td><a class="explorerLink">fastauth.near</a></td><td>sign</td><td>SUCCESS</td><td><a class="explorerLink">5e22…d180</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</body>
+</html>

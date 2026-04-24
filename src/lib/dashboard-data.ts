@@ -99,10 +99,38 @@ type DbTableCounts = {
   indexerCheckpoints: number;
 };
 
+type IndexerLag = {
+  chainHead: string | null;
+  scannedHeight: string | null;
+  backfillStartHeight: string | null;
+  blocksBehind: number | null;
+  latestIndexedBlockTimestamp: Date | null;
+  minutesBehind: number | null;
+  lastScannedCheckpointAt: Date | null;
+};
+
+type FastAuthChainHealth = {
+  computedAt: Date;
+  chainHead: string;
+  windowStartHeight: string;
+  windowEndHeight: string;
+  windowBlocks: number;
+  totalTransactions: number;
+  successfulTransactions: number;
+  failedTransactions: number;
+  successRatePct: number | null;
+  distinctRelayers: number;
+  lastSuccessTimestamp: Date | null;
+  lastSuccessTxHash: string | null;
+  minutesSinceLastSuccess: number | null;
+};
+
 type DashboardData = {
   accountsOverview: AggregateAccountsMetrics;
   transactionOverview: TransactionMetrics;
   latestNearFinalBlock: string | null;
+  indexerLag: IndexerLag;
+  fastAuthChainHealth: FastAuthChainHealth | null;
   collectorHealth: CollectorHealth[];
   relayerBreakdown: RelayerBreakdownItem[];
   recentNearTransactions: RecentNearTransaction[];
@@ -117,6 +145,17 @@ const MAX_UNIQUE_SPONSORED_ACCOUNTS_TO_DISPLAY = 12;
 const MAX_RECENT_NEAR_TRANSACTIONS = 8;
 const MAX_RECENT_SIGN_EVENTS = 12;
 const MAX_PUBLIC_KEY_ACCOUNTS = 12;
+
+function tryParseBigInt(value: string | null | undefined): bigint | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
 
 function resolveIndexerPollIntervalMs(): number {
   const raw = process.env.INDEXER_POLL_INTERVAL_MS;
@@ -202,6 +241,9 @@ export async function getDashboardData(): Promise<DashboardData> {
     signFailed30d,
     nearHeightCheckpoint,
     nearScannedCheckpoint,
+    nearChainHeadCheckpoint,
+    nearBackfillOriginCheckpoint,
+    latestFastAuthChainHealth,
     lastNearTransaction,
     relayerRows,
     relayerSponsoredPairsAllTime,
@@ -234,6 +276,9 @@ export async function getDashboardData(): Promise<DashboardData> {
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last30d }, ...failureWhere } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_final_block_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_scanned_height" } }),
+    prisma.indexerCheckpoint.findUnique({ where: { key: "near_chain_head_height" } }),
+    prisma.indexerCheckpoint.findUnique({ where: { key: "near_backfill_start_origin" } }),
+    prisma.fastAuthChainHealthSnapshot.findFirst({ orderBy: { computedAt: "desc" } }),
     prisma.nearTransaction.findFirst({ orderBy: { createdAt: "desc" } }),
     prisma.relayer.findMany({
       orderBy: { totalSignTransactions: "desc" },
@@ -449,10 +494,68 @@ export async function getDashboardData(): Promise<DashboardData> {
     updatedAt: row.updatedAt,
   }));
 
+  const chainHeadValue = nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null;
+  const scannedHeightValue = nearScannedCheckpoint?.value ?? null;
+  const chainHeadBigInt = tryParseBigInt(chainHeadValue);
+  const scannedBigInt = tryParseBigInt(scannedHeightValue);
+  const blocksBehind =
+    chainHeadBigInt !== null && scannedBigInt !== null
+      ? Number(chainHeadBigInt - scannedBigInt)
+      : null;
+  const latestIndexedBlockTimestamp = recentNearTransactionsRaw[0]?.blockTimestamp ?? null;
+  const minutesBehind = latestIndexedBlockTimestamp
+    ? Math.max(0, Math.floor((now.getTime() - latestIndexedBlockTimestamp.getTime()) / 60_000))
+    : null;
+
+  const fastAuthChainHealth: FastAuthChainHealth | null = latestFastAuthChainHealth
+    ? {
+        computedAt: latestFastAuthChainHealth.computedAt,
+        chainHead: latestFastAuthChainHealth.chainHead.toString(),
+        windowStartHeight: latestFastAuthChainHealth.windowStartHeight.toString(),
+        windowEndHeight: latestFastAuthChainHealth.windowEndHeight.toString(),
+        windowBlocks: latestFastAuthChainHealth.windowBlocks,
+        totalTransactions: latestFastAuthChainHealth.totalTransactions,
+        successfulTransactions: latestFastAuthChainHealth.successfulTransactions,
+        failedTransactions: latestFastAuthChainHealth.failedTransactions,
+        successRatePct:
+          latestFastAuthChainHealth.totalTransactions > 0
+            ? Math.round(
+                (latestFastAuthChainHealth.successfulTransactions /
+                  latestFastAuthChainHealth.totalTransactions) *
+                  1000,
+              ) / 10
+            : null,
+        distinctRelayers: latestFastAuthChainHealth.distinctRelayers,
+        lastSuccessTimestamp: latestFastAuthChainHealth.lastSuccessTimestamp,
+        lastSuccessTxHash: latestFastAuthChainHealth.lastSuccessTxHash,
+        minutesSinceLastSuccess: latestFastAuthChainHealth.lastSuccessTimestamp
+          ? Math.max(
+              0,
+              Math.floor(
+                (now.getTime() - latestFastAuthChainHealth.lastSuccessTimestamp.getTime()) /
+                  60_000,
+              ),
+            )
+          : null,
+      }
+    : null;
+
+  const indexerLag: IndexerLag = {
+    chainHead: chainHeadValue,
+    scannedHeight: scannedHeightValue,
+    backfillStartHeight: nearBackfillOriginCheckpoint?.value ?? null,
+    blocksBehind: blocksBehind !== null && Number.isFinite(blocksBehind) ? blocksBehind : null,
+    latestIndexedBlockTimestamp,
+    minutesBehind,
+    lastScannedCheckpointAt: nearScannedCheckpoint?.updatedAt ?? null,
+  };
+
   return {
     accountsOverview,
     transactionOverview,
-    latestNearFinalBlock: nearHeightCheckpoint?.value ?? null,
+    latestNearFinalBlock: nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null,
+    indexerLag,
+    fastAuthChainHealth,
     collectorHealth,
     relayerBreakdown,
     recentNearTransactions,

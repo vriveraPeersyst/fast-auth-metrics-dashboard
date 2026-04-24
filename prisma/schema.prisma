@@ -177,6 +177,24 @@ model IndexerCheckpoint {
   @@map("indexer_checkpoints")
 }
 
+model FastAuthChainHealthSnapshot {
+  id                     Int       @id @default(autoincrement())
+  computedAt             DateTime  @default(now()) @map("computed_at")
+  chainHead              BigInt    @map("chain_head")
+  windowStartHeight      BigInt    @map("window_start_height")
+  windowEndHeight        BigInt    @map("window_end_height")
+  windowBlocks           Int       @map("window_blocks")
+  totalTransactions      Int       @map("total_transactions")
+  successfulTransactions Int       @map("successful_transactions")
+  failedTransactions     Int       @map("failed_transactions")
+  distinctRelayers       Int       @map("distinct_relayers")
+  lastSuccessTimestamp   DateTime? @map("last_success_timestamp")
+  lastSuccessTxHash      String?   @map("last_success_tx_hash")
+
+  @@index([computedAt])
+  @@map("fastauth_chain_health_snapshots")
+}
+
 model Account {
   accountId          String   @id @map("account_id")
   accountType        String   @map("account_type")

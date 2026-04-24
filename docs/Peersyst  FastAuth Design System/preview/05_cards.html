@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cards & Panels</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  /* Metric cards */
+  .metricsGrid { display: grid; gap: 12px; grid-template-columns: repeat(6, 1fr); }
+  .metricCard { grid-column: span 2; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 24px; min-height: 128px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-card); }
+  .metricCard h2 { font-family: var(--font-mono); font-size: 12px; line-height: 20px; font-weight: 500; color: var(--color-ink-subtle); text-transform: uppercase; letter-spacing: 0.06em; margin: 0; }
+  .metricCard p { margin: 12px 0 0; font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; }
+
+  .denseGrid { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); }
+  .metricCard--small { grid-column: span 1; padding: 16px; min-height: 92px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
+  .metricCard--small h2 { font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.04em; font-weight: 500; color: var(--color-ink-subtle); margin: 0; }
+  .metricCard--small p { margin-top: 8px; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.01em; }
+
+  /* Health card */
+  .healthCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 24px; display: grid; gap: 16px; box-shadow: var(--shadow-card); }
+  .healthHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .healthHeader h3 { font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .healthBadge { border-radius: var(--radius-pill); font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 4px 10px; }
+  .healthBadge--ok { background: var(--color-status-ok-bg); color: var(--color-status-ok); }
+  .healthMeta { display: grid; gap: 8px; margin: 0; }
+  .healthMeta div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: baseline; }
+  .healthMeta dt { color: var(--color-ink-muted); font-size: 13px; line-height: 20px; margin: 0; }
+  .healthMeta dd { font-family: var(--font-mono); font-size: 13px; line-height: 20px; margin: 0; }
+  .healthDetails { color: var(--color-ink-subtle); font-size: 14px; line-height: 24px; margin: 0; }
+
+  /* Panel */
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 32px; box-shadow: var(--shadow-card); }
+  .panelTitle { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; margin-bottom: 24px; }
+  .panelTitle h2 { font-size: 22px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .panelTitle p { color: var(--color-ink-subtle); font-size: 14px; line-height: 24px; margin: 0; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 05</div>
+  <h1 class="page">Cards & Panels</h1>
+  <p class="lede">Three surfaces: Metric (big number), Health (status + meta), Panel (container for tables). All live on white, all share the same border, radius and shadow.</p>
+
+  <h2 class="section">Metric cards · big</h2>
+  <div class="metricsGrid">
+    <article class="metricCard"><h2>Total accounts</h2><p>12,408</p></article>
+    <article class="metricCard"><h2>Created (24h)</h2><p>318</p></article>
+    <article class="metricCard"><h2>Active (24h)</h2><p>4,102</p></article>
+  </div>
+
+  <h2 class="section">Metric cards · small (dense)</h2>
+  <div class="denseGrid">
+    <article class="metricCard--small"><h2>near_transactions</h2><p>284,917</p></article>
+    <article class="metricCard--small"><h2>fastauth_sign_events</h2><p>91,405</p></article>
+    <article class="metricCard--small"><h2>accounts</h2><p>12,408</p></article>
+    <article class="metricCard--small"><h2>relayers</h2><p>14</p></article>
+  </div>
+
+  <h2 class="section">Health cards</h2>
+  <div class="two">
+    <article class="healthCard">
+      <div class="healthHeader">
+        <h3>Indexer lag</h3>
+        <span class="healthBadge healthBadge--ok">+0 blocks</span>
+      </div>
+      <dl class="healthMeta">
+        <div><dt>Chain head</dt><dd>210,481,902</dd></div>
+        <div><dt>Scanned to</dt><dd>210,481,902</dd></div>
+        <div><dt>Time behind</dt><dd>&lt;1m</dd></div>
+        <div><dt>Last indexed</dt><dd>14:03:28 UTC</dd></div>
+      </dl>
+      <p class="healthDetails">Gap between the NEAR chain head and the last height the indexer has fully scanned.</p>
+    </article>
+
+    <article class="healthCard">
+      <div class="healthHeader">
+        <h3>Fast Auth Status</h3>
+        <span class="healthBadge healthBadge--ok">98.6%</span>
+      </div>
+      <dl class="healthMeta">
+        <div><dt>Window</dt><dd>6,000 blocks</dd></div>
+        <div><dt>FastAuth tx</dt><dd>812 ok / 11 failed</dd></div>
+        <div><dt>Distinct relayers</dt><dd>14</dd></div>
+        <div><dt>Last success</dt><dd>2s ago</dd></div>
+      </dl>
+      <p class="healthDetails">Live probe of recent blocks. Independent of the indexer backfill.</p>
+    </article>
+  </div>
+
+  <h2 class="section">Panel container</h2>
+  <section class="panel">
+    <div class="panelTitle">
+      <h2>Recent NEAR transactions</h2>
+      <p>All indexed transactions in scanned blocks</p>
+    </div>
+    <p style="color:var(--color-ink-muted); font-size:14px;">— table or content goes here —</p>
+  </section>
+</body>
+</html>

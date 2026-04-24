@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { runAllIndexers } from "@/lib/indexers/run-all";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
 const MAX_REQUEST_SKEW_SECONDS = 5 * 60;
 
 function constantTimeEqual(a: string, b: string): boolean {

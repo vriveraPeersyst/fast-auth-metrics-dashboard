@@ -25,7 +25,10 @@ pnpm indexers:run              # One-shot run of all indexers, then exit
 pnpm indexers:worker           # Long-running poll loop (production mode)
 pnpm indexers:trigger          # Send signed HMAC POST to /api/indexers/run
 pnpm indexers:trigger:dry      # Preview the signed request without sending
+pnpm backfill:user-keys        # Backfill derived user public keys from historical sign events
 ```
+
+Additional maintenance scripts exist in `src/scripts/` (`inspect-db.ts`, `rebuild-marts.ts`, `wipe-db.ts`) without package.json aliases — run them directly with `pnpm tsx src/scripts/<name>.ts` when needed, and double-check the destructive ones before invoking.
 
 There is no test runner configured — do not invent `pnpm test`.
 
@@ -40,40 +43,33 @@ Two services run from the **same repo and same Prisma schema**:
 
 ### Indexer pipeline (`src/lib/indexers/`)
 
-`run-all.ts` orchestrates the collectors. Order matters:
+`run-all.ts` currently runs **two collectors concurrently** via `Promise.all` (they hit disjoint upstreams and write to disjoint tables):
 
-1. `auth0.ts`, `service-metrics.ts`, `near.ts` run **in parallel** (independent source systems).
-2. `tvl.ts` runs **after** `near.ts` — it discovers sponsored accounts from `fastauth_sign_events` rows produced by the NEAR collector.
-3. `dashboard-kpis.ts` runs **last** — it rolls up the upstream tables into pre-aggregated marts that the dashboard reads.
+1. `near.ts` → `collectNearState` — ingests FastAuth-related NEAR transactions, derives `fastauth_sign_events` rows, then calls `rebuildRelayerMarts` inline so the `relayers` / `relayer_dapps` marts are refreshed as part of the same run.
+2. `public-key-accounts.ts` → `collectFastAuthPublicKeyAccounts` — resolves relayer public keys seen in sign events to NEAR accounts via FastNEAR, populating `fastauth_public_key_accounts`.
 
-Every collector returns `IndexerRunResult` (`src/lib/indexers/types.ts`) with `status: "ok" | "skipped" | "error"`. Collectors must **never throw** out of `runAllIndexers` — wrap failures and return `status: "error"` so one broken source doesn't kill the whole run.
+The Prisma schema still defines `Auth0Log`, `ServiceMetricSample`, and `AccountTvlDailySnapshot` models, but the corresponding collectors (`auth0.ts`, `service-metrics.ts`, `tvl.ts`, `dashboard-kpis.ts`) no longer exist in `src/lib/indexers/` — do not assume those tables are being populated by the current worker. If you're reviving any of them, add them back into `runAllIndexers` and wire a checkpoint key.
+
+Every collector returns `IndexerRunResult` (`src/lib/indexers/types.ts`) with `status: "ok" | "skipped" | "error"`. Collectors must **never throw** out of `runAllIndexers` — wrap failures and return `status: "error"` so one broken source doesn't kill the whole run. `runIndexerWithLogs` wraps each collector with structured start/finish/heartbeat logs (15s heartbeat).
+
+### NEAR RPC orchestration
+
+`near-rpc-manager.ts` exposes `createNearRpcManager()` which returns a `NearRpcManager` configured against a **hardcoded pool** of public NEAR RPCs (see `NEAR_RPC_URLS` in that file). The pool uses **round-robin per request**: each `request()` call advances `currentIndex` atomically and uses the next healthy endpoint, so N concurrent callers spread ~N/endpoint-count per RPC. Endpoints that return 429, 5xx, connection errors, or JSON-RPC quota/usage-limit messages are blacklisted for 60s and excluded from rotation. On exhaustion, `request()` throws `NearRpcExhaustedError` carrying the set of endpoints that responded `UNKNOWN_BLOCK`; `near.ts` uses this to require **majority consensus** (≥`ceil(n/2)` distinct endpoints) before permanently skipping a height — this prevents a single pruning RPC from advancing the checkpoint past real blocks. Collectors must call through the manager, not raw `fetch`. Archival RPCs are intentionally not used.
 
 ### Crash recovery
 
-All collectors are checkpoint-driven via the `indexer_checkpoints` key/value table. Specifically:
+All collectors are checkpoint-driven via the `indexer_checkpoints` key/value table. In particular:
 
-- Auth0 ingestion uses transactional checkpoints so resumption never drops or double-counts logs.
-- `near.ts` tracks `near_last_final_block_height`, `near_last_final_block_hash`, and `near_last_scanned_height`; on each run it backfills from the last scanned height up to latest final, respecting `NEAR_MAX_BLOCKS_PER_RUN`.
-- Service-metric collectors also persist `*_delta` samples so counter growth is preserved across downtime.
+- `near.ts` tracks `near_last_final_block_height`, `near_last_final_block_hash`, and `near_last_scanned_height`; on each run it backfills from the last scanned height up to latest final, respecting the hardcoded `NEAR_MAX_BLOCKS_PER_RUN`, and only advances checkpoints up to the highest contiguous successfully-persisted height.
+- `public-key-accounts.ts` checkpoints incrementally on `fastauth_sign_events.id`, with a first-run lookback window controlled by `FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS`.
 
 When editing collectors, preserve this checkpoint-first design — do not substitute in-memory state.
 
-### NEAR RPC split
+### Indexer tuning
 
-Two RPC endpoints with different roles (enforced at runtime):
-
-- `NEAR_RPC_URL` — normal RPC for latest-final polling.
-- `NEAR_ARCHIVAL_RPC_URL` — archival RPC for historical backfill queries.
+Block concurrency, chunk concurrency, max-blocks-per-run, backfill seed, progress log cadence, RPC pool, request timeout, blacklist duration, and chain-health prober knobs are **hardcoded in source** (`near.ts`, `fastauth-head-status.ts`, `near-rpc-manager.ts`). They were previously env-driven but flipped to constants because they are deployment-invariant — change them in code, not via env vars.
 
 See `FASTNEAR_RPC_LIMITS_RUNBOOK.md` for rate-limiting rules (treat 429/5xx as backpressure; scale conservatively).
-
-### Auth
-
-Closed to a single Google hosted-domain (default `peersyst.org`). The domain check happens in three places — all must stay consistent if you touch auth:
-
-- `src/lib/auth.ts` — NextAuth `signIn` callback (email-ends-with-domain OR Google `hd` claim; also requires `email_verified`).
-- `src/proxy.ts` — **this repo's middleware file is `src/proxy.ts`, not `middleware.ts`**. It runs `withAuth` and blocks non-domain tokens on every path except `api`, static assets, and `/sign-in`.
-- `src/app/page.tsx` — server-side re-check before rendering, in case a token is stale.
 
 ### Signed indexer trigger
 
@@ -81,7 +77,15 @@ Closed to a single Google hosted-domain (default `peersyst.org`). The domain che
 
 ### Data tables
 
-Prisma schema in `prisma/schema.prisma`. The models split into **raw ingest** (`auth0_logs`, `service_metrics_timeseries`, `near_transactions`, `account_tvl_daily_snapshots`), **derived sign events** (`fastauth_sign_events` — produced by `near.ts` from raw transactions), **marts** (`relayers`, `relayer_dapps` — rebuilt each NEAR run from sign events), and **checkpoints** (`indexer_checkpoints`). The dashboard reads marts, never raw tables directly for KPIs.
+Prisma schema in `prisma/schema.prisma`. The models split into:
+
+- **Raw ingest** — `near_transactions` (populated by `near.ts`). `auth0_logs`, `service_metrics_timeseries`, and `account_tvl_daily_snapshots` are declared but not actively populated (see pipeline note above).
+- **Derived** — `fastauth_sign_events` (produced by `near.ts` from raw transactions) and `fastauth_public_key_accounts` (produced by `public-key-accounts.ts`).
+- **Marts** — `relayers`, `relayer_dapps` — rebuilt each NEAR run from sign events via `rebuildRelayerMarts` in `near.ts`.
+- **Checkpoints** — `indexer_checkpoints` key/value table.
+- **Accounts** — `accounts` model holds FastAuth user accounts (not NextAuth — there is no auth in this dashboard).
+
+The dashboard reads marts and derived tables via `src/lib/dashboard-data.ts`; it never reads raw `near_transactions` for KPIs.
 
 ## Conventions
 

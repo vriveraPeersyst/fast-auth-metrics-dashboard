@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Typography</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .spec { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 28px 32px; box-shadow: var(--shadow-card); display: grid; grid-template-columns: 1fr 280px; gap: 32px; align-items: baseline; margin-bottom: 12px; }
+  .sample { overflow: hidden; }
+  .meta { font-family: var(--font-mono); font-size: 12px; line-height: 20px; color: var(--color-ink-subtle); display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; align-content: start; padding-top: 6px; border-top: 1px solid var(--color-border); }
+  .meta b { color: var(--color-ink); font-weight: 500; }
+
+  .s-h1    { font-size: 40px; line-height: 48px; font-weight: 700; letter-spacing: -0.01em; }
+  .s-th1   { font-size: 28px; line-height: 36px; font-weight: 700; letter-spacing: -0.01em; }
+  .s-h2    { font-size: 22px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .s-h3    { font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .s-body  { font-size: 16px; line-height: 30px; }
+  .s-bodysm{ font-size: 14px; line-height: 24px; }
+  .s-meta  { font-size: 13px; line-height: 20px; }
+  .s-kick  { font-family: var(--font-mono); font-size: 12px; line-height: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); font-weight: 500; }
+  .s-mlab  { font-family: var(--font-mono); font-size: 12px; line-height: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); font-weight: 500; }
+  .s-mval  { font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: -0.01em; }
+  .s-thead { font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); font-weight: 500; }
+  .s-tcell { font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+  .s-badge { font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; color: var(--color-status-ok); background: var(--color-status-ok-bg); border-radius: var(--radius-pill); padding: 4px 10px; display: inline-block; }
+
+  .stack { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
+  .stack .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 24px; box-shadow: var(--shadow-card); }
+  .stack .fam { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 12px; }
+  .stack .big { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 16px; }
+  .stack .abc { font-size: 18px; line-height: 28px; color: var(--color-ink-subtle); }
+  .mono .big { font-family: var(--font-mono); letter-spacing: -0.01em; }
+  .mono .abc { font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 02</div>
+  <h1 class="page">Typography</h1>
+  <p class="lede">System fonts only — SF Pro for prose, SF Mono for numbers, hashes, labels, and anything terminal-adjacent. Zero webfonts load.</p>
+
+  <div class="stack">
+    <div class="card">
+      <div class="fam">Sans · SF Pro</div>
+      <div class="big">Aa Bb 128</div>
+      <div class="abc">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz 0123456789</div>
+    </div>
+    <div class="card mono">
+      <div class="fam">Mono · SF Mono</div>
+      <div class="big">Aa Bb 128</div>
+      <div class="abc">0xA3f…c91e &nbsp; 0123456789<br>NEAR · block · chunk · tx</div>
+    </div>
+  </div>
+
+  <h2 class="section">Scale</h2>
+
+  <div class="spec"><div class="sample"><div class="s-h1">Indexer lag</div></div><div class="meta"><span>Role</span><b>H1</b><span>Family</span>SF Pro<span>Size / line</span>40 / 48<span>Weight</span>700<span>Tracking</span>-0.01em</div></div>
+  <div class="spec"><div class="sample"><div class="s-th1">Private peersyst.org access</div></div><div class="meta"><span>Role</span><b>Topbar H1</b><span>Family</span>SF Pro<span>Size / line</span>28 / 36<span>Weight</span>700<span>Tracking</span>-0.01em</div></div>
+  <div class="spec"><div class="sample"><div class="s-h2">Relayer breakdown</div></div><div class="meta"><span>Role</span><b>H2 / Panel</b><span>Family</span>SF Pro<span>Size / line</span>22 / 26<span>Weight</span>700<span>Tracking</span>-0.01em</div></div>
+  <div class="spec"><div class="sample"><div class="s-h3">Collector health</div></div><div class="meta"><span>Role</span><b>H3 / Card</b><span>Family</span>SF Pro<span>Size / line</span>18 / 26<span>Weight</span>700<span>Tracking</span>-0.01em</div></div>
+  <div class="spec"><div class="sample"><div class="s-body">Gap between the NEAR chain head and the last height the indexer has fully scanned.</div></div><div class="meta"><span>Role</span><b>Body</b><span>Family</span>SF Pro<span>Size / line</span>16 / 30<span>Weight</span>400</div></div>
+  <div class="spec"><div class="sample"><div class="s-bodysm">Freshness is relative to INDEXER_POLL_INTERVAL_MS.</div></div><div class="meta"><span>Role</span><b>Body Small</b><span>Family</span>SF Pro<span>Size / line</span>14 / 24<span>Weight</span>400</div></div>
+  <div class="spec"><div class="sample"><div class="s-meta">last success — 14 minutes ago</div></div><div class="meta"><span>Role</span><b>Meta</b><span>Family</span>SF Pro<span>Size / line</span>13 / 20<span>Weight</span>400</div></div>
+  <div class="spec"><div class="sample"><div class="s-kick">FASTAUTH METRICS DASHBOARD</div></div><div class="meta"><span>Role</span><b>Kicker</b><span>Family</span>SF Mono<span>Size / line</span>12 / 20<span>Weight</span>500<span>Tracking</span>+0.06em · UPPER</div></div>
+
+  <h2 class="section">Numbers & metrics</h2>
+  <div class="spec"><div class="sample"><div class="s-mlab">TOTAL ACCOUNTS</div><div class="s-mval">12,408</div></div><div class="meta"><span>Role</span><b>Metric</b><span>Label</span>Mono 12/20 UPPER<span>Value</span>Sans 32/40 700</div></div>
+
+  <h2 class="section">Tables</h2>
+  <div class="spec"><div class="sample"><div class="s-thead">BLOCK · TIMESTAMP · SIGNER</div><div class="s-tcell" style="margin-top:8px">210,481,902 · 2026-04-22T18:03Z · alice.near</div></div><div class="meta"><span>Role</span><b>Table</b><span>Head</span>Mono 11/16 UPPER<span>Cell</span>Mono 13/20</div></div>
+
+  <h2 class="section">Badge</h2>
+  <div class="spec"><div class="sample"><span class="s-badge">HEALTHY</span></div><div class="meta"><span>Role</span><b>Health badge</b><span>Family</span>SF Mono<span>Size / line</span>11 / 16<span>Weight</span>700<span>Tracking</span>+0.08em · UPPER</div></div>
+</body>
+</html>

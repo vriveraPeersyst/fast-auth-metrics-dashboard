@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Palette</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1 { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2 { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .row.small { grid-template-columns: repeat(6, 1fr); }
+  .sw { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-card); }
+  .sw .chip { height: 120px; border-bottom: 1px solid var(--color-border); }
+  .sw .meta { padding: 14px 16px; }
+  .sw .name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .sw .hex, .sw .tok { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-muted); line-height: 18px; }
+  .sw .tok { color: var(--color-ink-subtle); }
+  .sw .role { font-size: 12px; color: var(--color-ink-muted); margin-top: 4px; line-height: 16px; }
+  .checker { background-image: linear-gradient(45deg,#ddd 25%,transparent 25%),linear-gradient(-45deg,#ddd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ddd 75%),linear-gradient(-45deg,transparent 75%,#ddd 75%); background-size:12px 12px; background-position:0 0,0 6px,6px -6px,-6px 0; }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 01</div>
+  <h1>Color</h1>
+  <p class="lede">90% warm neutral + black, with mint as the only accent. Status hues are functional — never used as brand colors.</p>
+
+  <h2>Accent — Mint</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#00F29B"></div><div class="meta"><div class="name">Mint</div><div class="hex">#00F29B</div><div class="tok">--color-mint</div><div class="role">Primary CTA · healthy fill · active</div></div></div>
+    <div class="sw"><div class="chip" style="background:#92FFD8"></div><div class="meta"><div class="name">Mint Light</div><div class="hex">#92FFD8</div><div class="tok">--color-mint-light</div><div class="role">Button hover</div></div></div>
+    <div class="sw"><div class="chip" style="background:#9CFFDB"></div><div class="meta"><div class="name">Mint Soft</div><div class="hex">#9CFFDB</div><div class="tok">--color-mint-soft</div><div class="role">Highlight backgrounds</div></div></div>
+  </div>
+
+  <h2>Neutrals — warm cream</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#F5F4ED"></div><div class="meta"><div class="name">Canvas</div><div class="hex">#F5F4ED</div><div class="tok">--color-canvas</div><div class="role">Page background</div></div></div>
+    <div class="sw"><div class="chip" style="background:#FFFFFF;border-bottom-color:#E1E0DA"></div><div class="meta"><div class="name">Surface</div><div class="hex">#FFFFFF</div><div class="tok">--color-surface</div><div class="role">Cards & panels</div></div></div>
+    <div class="sw"><div class="chip" style="background:#EBE9DF"></div><div class="meta"><div class="name">Surface Muted</div><div class="hex">#EBE9DF</div><div class="tok">--color-surface-muted</div><div class="role">Table headers, hover</div></div></div>
+    <div class="sw"><div class="chip" style="background:#EBEBEB"></div><div class="meta"><div class="name">Border</div><div class="hex">#EBEBEB</div><div class="tok">--color-border</div><div class="role">Default 1px border</div></div></div>
+    <div class="sw"><div class="chip" style="background:#D6D4CB"></div><div class="meta"><div class="name">Border Subtle</div><div class="hex">#D6D4CB</div><div class="tok">--color-border-subtle</div><div class="role">Secondary separator</div></div></div>
+    <div class="sw"><div class="chip" style="background:#E1E0DA"></div><div class="meta"><div class="name">Border Ring</div><div class="hex">#E1E0DA</div><div class="tok">--color-border-ring</div><div class="role">Focus/ring accents</div></div></div>
+  </div>
+
+  <h2>Ink — text</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#000"></div><div class="meta"><div class="name">Ink</div><div class="hex">#000000</div><div class="tok">--color-ink</div><div class="role">Primary text</div></div></div>
+    <div class="sw"><div class="chip" style="background:#757571"></div><div class="meta"><div class="name">Ink Subtle</div><div class="hex">#757571</div><div class="tok">--color-ink-subtle</div><div class="role">Labels, secondary</div></div></div>
+    <div class="sw"><div class="chip" style="background:#93928E"></div><div class="meta"><div class="name">Ink Muted</div><div class="hex">#93928E</div><div class="tok">--color-ink-muted</div><div class="role">Tertiary, placeholder</div></div></div>
+    <div class="sw"><div class="chip checker" style="background-color:rgba(0,0,0,0.48)"></div><div class="meta"><div class="name">Ink Translucent</div><div class="hex">rgba(0,0,0,.48)</div><div class="tok">--color-ink-translucent</div><div class="role">Overlays</div></div></div>
+  </div>
+
+  <h2>Status — functional only</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#1EA874"></div><div class="meta"><div class="name">OK</div><div class="hex">#1EA874</div><div class="tok">--color-status-ok</div><div class="role">Healthy text</div></div></div>
+    <div class="sw"><div class="chip" style="background:rgba(30,168,116,0.12)"></div><div class="meta"><div class="name">OK Background</div><div class="hex">rgba(30,168,116,.12)</div><div class="tok">--color-status-ok-bg</div><div class="role">Healthy pill bg</div></div></div>
+    <div class="sw"><div class="chip" style="background:#B07A08"></div><div class="meta"><div class="name">Warn</div><div class="hex">#B07A08</div><div class="tok">--color-status-warn</div><div class="role">Lagging text</div></div></div>
+    <div class="sw"><div class="chip" style="background:rgba(176,122,8,0.14)"></div><div class="meta"><div class="name">Warn Background</div><div class="hex">rgba(176,122,8,.14)</div><div class="tok">--color-status-warn-bg</div><div class="role">Lagging pill bg</div></div></div>
+    <div class="sw"><div class="chip" style="background:#C64545"></div><div class="meta"><div class="name">Error</div><div class="hex">#C64545</div><div class="tok">--color-status-err</div><div class="role">Stale / no-data</div></div></div>
+    <div class="sw"><div class="chip" style="background:rgba(198,69,69,0.12)"></div><div class="meta"><div class="name">Error Background</div><div class="hex">rgba(198,69,69,.12)</div><div class="tok">--color-status-err-bg</div><div class="role">Stale / no-data bg</div></div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Buttons</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 32px; box-shadow: var(--shadow-card); display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; }
+  .panel + .panel { margin-top: 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .spec { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-subtle); line-height: 22px; }
+  .spec b { color: var(--color-ink); font-weight: 500; }
+
+  .btn { border: 0; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 14px; line-height: 28px; font-weight: 500; letter-spacing: -0.01em; cursor: pointer; display: inline-flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 20px; transition: background 160ms ease, box-shadow 160ms ease; }
+  .btn-primary { background: var(--color-mint); color: var(--color-ink); box-shadow: var(--shadow-card); }
+  .btn-primary:hover { background: var(--color-mint-light); }
+  .btn-ghost { background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-ink); }
+  .btn-ghost:hover { background: var(--color-surface-muted); }
+  .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .btn.small { min-height: 36px; padding: 6px 14px; font-size: 13px; line-height: 20px; }
+
+  .btn.focus { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+
+  .dot { width: 8px; height: 8px; border-radius: 100px; background: var(--color-ink); }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 04</div>
+  <h1 class="page">Buttons</h1>
+  <p class="lede">Pill shape, 52px tall, mint primary + ghost secondary. Do not introduce a third style — if you need more hierarchy, use spacing.</p>
+
+  <h2 class="section">Primary — Action</h2>
+  <div class="panel">
+    <div class="row">
+      <button class="btn btn-primary">Run indexer now</button>
+      <button class="btn btn-primary">Sign in with Google <span class="dot"></span></button>
+      <button class="btn btn-primary focus">Focus ring</button>
+      <button class="btn btn-primary" disabled>Disabled</button>
+    </div>
+    <div class="spec">
+      <div><b>Class</b> .actionButton</div>
+      <div><b>Background</b> --color-mint</div>
+      <div><b>Hover</b> --color-mint-light</div>
+      <div><b>Radius</b> pill · 100px</div>
+      <div><b>Height</b> 52px · padding 12/20</div>
+      <div><b>Shadow</b> --shadow-card</div>
+    </div>
+  </div>
+
+  <h2 class="section">Secondary — Ghost</h2>
+  <div class="panel">
+    <div class="row">
+      <button class="btn btn-ghost">Log out</button>
+      <button class="btn btn-ghost">Refresh</button>
+      <button class="btn btn-ghost focus">Focus ring</button>
+      <button class="btn btn-ghost" disabled>Disabled</button>
+    </div>
+    <div class="spec">
+      <div><b>Class</b> .ghostButton</div>
+      <div><b>Background</b> --color-surface</div>
+      <div><b>Border</b> 1px --color-border</div>
+      <div><b>Hover</b> --color-surface-muted</div>
+      <div><b>Same pill geometry</b></div>
+    </div>
+  </div>
+
+  <h2 class="section">Small variant · optional</h2>
+  <div class="panel">
+    <div class="row">
+      <button class="btn btn-primary small">View block</button>
+      <button class="btn btn-ghost small">Copy hash</button>
+    </div>
+    <div class="spec">
+      <div><b>Use sparingly</b> — inside dense tables only</div>
+      <div><b>Height</b> 36px · padding 6/14</div>
+      <div><b>Font</b> 13/20</div>
+    </div>
+  </div>
+</body>
+</html>

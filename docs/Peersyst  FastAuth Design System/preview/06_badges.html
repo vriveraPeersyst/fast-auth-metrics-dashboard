@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Badges</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 24px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; }
+  .card .label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); }
+  .card .hex { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-muted); }
+
+  .badge { border-radius: var(--radius-pill); font-family: var(--font-mono); font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; padding: 4px 10px; display: inline-block; align-self: flex-start; }
+  .badge--ok    { background: var(--color-status-ok-bg);   color: var(--color-status-ok); }
+  .badge--warn  { background: var(--color-status-warn-bg); color: var(--color-status-warn); }
+  .badge--err   { background: var(--color-status-err-bg);  color: var(--color-status-err); }
+  .badge--nodata{ background: var(--color-status-err-bg);  color: var(--color-status-err); }
+
+  .in-context { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .ctx { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 20px; box-shadow: var(--shadow-card); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .ctx h3 { font-size: 16px; line-height: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+
+  .note { font-size: 14px; line-height: 24px; color: var(--color-ink-subtle); max-width: 64ch; }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 06</div>
+  <h1 class="page">Status badges</h1>
+  <p class="lede">Four states, tracked mono pills. Color always pairs with a word — color alone never conveys state.</p>
+
+  <h2 class="section">Variants</h2>
+  <div class="grid">
+    <div class="card"><span class="badge badge--ok">Healthy</span><div class="label">.healthBadge--healthy</div><div class="hex">#1EA874 · 12% bg</div></div>
+    <div class="card"><span class="badge badge--warn">Lagging</span><div class="label">.healthBadge--lagging</div><div class="hex">#B07A08 · 14% bg</div></div>
+    <div class="card"><span class="badge badge--err">Stale</span><div class="label">.healthBadge--stale</div><div class="hex">#C64545 · 12% bg</div></div>
+    <div class="card"><span class="badge badge--nodata">No data</span><div class="label">.healthBadge--no_data</div><div class="hex">shares stale tokens</div></div>
+  </div>
+
+  <h2 class="section">In context</h2>
+  <div class="in-context">
+    <div class="ctx"><h3>Indexer lag</h3><span class="badge badge--ok">+0 blocks</span></div>
+    <div class="ctx"><h3>FastAuth chunk</h3><span class="badge badge--warn">93.4%</span></div>
+    <div class="ctx"><h3>Google OAuth</h3><span class="badge badge--err">2h 14m</span></div>
+  </div>
+
+  <h2 class="section">Rules</h2>
+  <p class="note">
+    Don't introduce a 4th color (e.g. "info blue"). If something is neutral, leave it unbadged. Don't use mint as a badge color — mint is reserved for active CTAs, not state.
+  </p>
+</body>
+</html>

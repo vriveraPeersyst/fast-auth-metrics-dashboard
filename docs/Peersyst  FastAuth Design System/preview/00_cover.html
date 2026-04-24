@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FastAuth — Cover</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); display: flex; align-items: stretch; }
+  .wrap { flex: 1; padding: 56px; display: grid; grid-template-rows: auto 1fr auto; gap: 32px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); font-weight: 500; }
+  h1 { font-size: 72px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 700; margin: 0; }
+  h1 em { font-style: normal; display: inline-block; background: var(--color-mint); padding: 4px 16px 6px; border-radius: 14px; line-height: 1; }
+  .lede { font-size: 20px; line-height: 32px; color: var(--color-ink-subtle); max-width: 60ch; margin-top: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-content: end; }
+  .chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 20px; box-shadow: var(--shadow-card); }
+  .chip .k { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .chip .v { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.01em; }
+  .chip .s { color: var(--color-ink-muted); font-size: 13px; margin-top: 4px; font-family: var(--font-mono); }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 8px; border: 1px solid rgba(0,0,0,0.06); }
+  .foot { display: flex; justify-content: space-between; align-items: baseline; color: var(--color-ink-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; border-top: 1px solid var(--color-border-subtle); padding-top: 20px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div>
+      <div class="kicker">Peersyst · Design System · v1.0</div>
+      <h1>Fast<em>Auth</em>.</h1>
+      <p class="lede">The instrument-panel design system behind FastAuth Metrics. Warm cream canvas, black ink, mono numbers, one mint accent — earned.</p>
+    </div>
+
+    <div class="grid">
+      <div class="chip"><div class="k">Accent</div><div class="v"><span class="swatch" style="background:#00F29B"></span>Mint</div><div class="s">#00F29B</div></div>
+      <div class="chip"><div class="k">Canvas</div><div class="v"><span class="swatch" style="background:#F5F4ED"></span>Cream</div><div class="s">#F5F4ED</div></div>
+      <div class="chip"><div class="k">Ink</div><div class="v"><span class="swatch" style="background:#000"></span>Pure black</div><div class="s">#000000</div></div>
+      <div class="chip"><div class="k">Type</div><div class="v">SF Pro + SF Mono</div><div class="s">system · 0 webfonts</div></div>
+    </div>
+
+    <div class="foot">
+      <span>fastauth-metrics · operator-grade</span>
+      <span>2026.04.23</span>
+    </div>
+  </div>
+</body>
+</html>

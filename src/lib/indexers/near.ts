@@ -4,11 +4,20 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 
 import {
-  NearRpcManager,
-  resolveArchivalNearRpcManagerUrlsFromEnv,
-  resolveNormalNearRpcManagerUrlsFromEnv,
+  createNearRpcManager,
+  NearRpcExhaustedError,
+  type NearRpcManager,
 } from "@/lib/indexers/near-rpc-manager";
 import type { IndexerRunResult } from "@/lib/indexers/types";
+
+// Hardcoded indexer tuning. Historical defaults from env (.env knobs) have
+// been collapsed into source constants — they are deployment-invariant and
+// only churned here.
+const NEAR_MAX_BLOCKS_PER_RUN = 500;
+const NEAR_BLOCK_CONCURRENCY = 20;
+const NEAR_CHUNK_CONCURRENCY = 6;
+const NEAR_BACKFILL_START_HEIGHT = 194_800_000;
+const NEAR_PROGRESS_LOG_EVERY_BLOCKS = 10;
 
 type NearBlockResponse = {
   result?: {
@@ -46,50 +55,11 @@ type NearChunkTransaction = {
 const CHECKPOINT_HEIGHT = "near_last_final_block_height";
 const CHECKPOINT_HASH = "near_last_final_block_hash";
 const CHECKPOINT_SCANNED_HEIGHT = "near_last_scanned_height";
-const DEFAULT_MAX_BLOCKS_PER_RUN = 1000;
-const DEFAULT_BLOCK_CONCURRENCY = 20;
-const DEFAULT_CHUNK_CONCURRENCY = 6;
-const DEFAULT_FASTAUTH_CONTRACT_IDS = ["fast-auth.near", "fast-auth.testnet"];
+const CHECKPOINT_CHAIN_HEAD_HEIGHT = "near_chain_head_height";
+const CHECKPOINT_CHAIN_HEAD_HASH = "near_chain_head_hash";
+const CHECKPOINT_BACKFILL_START_ORIGIN = "near_backfill_start_origin";
 
 type FastAuthSignEventSeed = Prisma.FastAuthSignEventCreateManyInput;
-
-function resolveMaxBlocksPerRun(): number {
-  const raw = process.env.NEAR_MAX_BLOCKS_PER_RUN;
-
-  if (!raw) {
-    return DEFAULT_MAX_BLOCKS_PER_RUN;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    throw new Error("NEAR_MAX_BLOCKS_PER_RUN must be a number >= 1.");
-  }
-
-  return Math.floor(parsed);
-}
-
-function resolvePositiveIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-
-  if (!raw) {
-    return fallback;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return fallback;
-  }
-
-  return Math.floor(parsed);
-}
-
-function resolveBlockConcurrency(): number {
-  return resolvePositiveIntEnv("NEAR_BLOCK_CONCURRENCY", DEFAULT_BLOCK_CONCURRENCY);
-}
-
-function resolveChunkConcurrency(): number {
-  return resolvePositiveIntEnv("NEAR_CHUNK_CONCURRENCY", DEFAULT_CHUNK_CONCURRENCY);
-}
 
 async function runWithConcurrency<T>(
   items: T[],
@@ -133,42 +103,23 @@ async function runWithConcurrency<T>(
 
 function resolveFastAuthContractIds(): string[] {
   const raw = process.env.FASTAUTH_CONTRACT_IDS;
+
+  if (!raw) {
+    throw new Error(
+      "FASTAUTH_CONTRACT_IDS is required. Set on Railway worker (comma-separated contract IDs).",
+    );
+  }
+
   const parsed = raw
-    ?.split(",")
+    .split(",")
     .map((contractId) => contractId.trim().toLowerCase())
     .filter(Boolean);
 
-  return parsed && parsed.length > 0 ? [...new Set(parsed)] : DEFAULT_FASTAUTH_CONTRACT_IDS;
-}
-
-function resolveBackfillStartHeight(): number | null {
-  const raw = process.env.NEAR_BACKFILL_START_HEIGHT;
-
-  if (!raw) {
-    return null;
+  if (parsed.length === 0) {
+    throw new Error("FASTAUTH_CONTRACT_IDS must contain at least one contract ID.");
   }
 
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error("NEAR_BACKFILL_START_HEIGHT must be an integer >= 0.");
-  }
-
-  return parsed;
-}
-
-function resolveNearProgressLogEveryBlocks(): number {
-  const raw = process.env.NEAR_PROGRESS_LOG_EVERY_BLOCKS;
-
-  if (!raw) {
-    return 10;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return 10;
-  }
-
-  return Math.floor(parsed);
+  return [...new Set(parsed)];
 }
 
 function toDateFromNearNs(timestampNs: number | undefined): Date {
@@ -180,19 +131,21 @@ function toDateFromNearNs(timestampNs: number | undefined): Date {
 }
 
 function isSkippableMissingHeightError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
+  // Only trust the exhausted-retries error type. A single transient failure
+  // shouldn't skip a height; we need confirmation from the full retry loop.
+  if (!(error instanceof NearRpcExhaustedError)) {
     return false;
   }
 
-  const message = error.message;
-  const hasMissingBlockSignal =
-    message.includes("UNKNOWN_BLOCK") || message.includes("Unknown") || message.includes("DB Not Found");
+  if (!error.message.includes("block-by-height")) {
+    return false;
+  }
 
-  return (
-    message.includes("block-by-height") &&
-    hasMissingBlockSignal &&
-    (message.includes("(422)") || message.includes("RPC error"))
-  );
+  // Require majority of endpoints in the pool to confirm UNKNOWN_BLOCK before
+  // permanently skipping. Prevents a single pruning RPC that lies about
+  // heights it doesn't serve from advancing the checkpoint past real blocks.
+  const quorum = Math.ceil(error.healthyEndpointCount / 2);
+  return error.unknownBlockEndpoints.size >= quorum;
 }
 
 async function fetchFinalBlock(rpcManager: NearRpcManager): Promise<NearBlockResponse> {
@@ -868,24 +821,34 @@ async function persistRunCheckpoints(
 }
 
 export async function collectNearState(prisma: PrismaClient): Promise<IndexerRunResult> {
-  const normalRpcManager = new NearRpcManager(resolveNormalNearRpcManagerUrlsFromEnv());
-  const archivalRpcManager = new NearRpcManager(resolveArchivalNearRpcManagerUrlsFromEnv());
-  const historyRpcPool = (process.env.NEAR_HISTORY_RPC_POOL ?? "archival").trim().toLowerCase();
-  const historyRpcManager = historyRpcPool === "normal" ? normalRpcManager : archivalRpcManager;
+  const rpcManager = createNearRpcManager();
   const fastAuthContractIds = resolveFastAuthContractIds();
   const fastAuthContractSet = new Set(fastAuthContractIds);
-  const configuredBackfillStartHeight = resolveBackfillStartHeight();
-  const progressLogEveryBlocks = resolveNearProgressLogEveryBlocks();
+  const configuredBackfillStartHeight = NEAR_BACKFILL_START_HEIGHT;
+  const progressLogEveryBlocks = NEAR_PROGRESS_LOG_EVERY_BLOCKS;
 
   try {
-    const maxBlocksPerRun = resolveMaxBlocksPerRun();
-    const payload = await fetchFinalBlock(normalRpcManager);
+    const maxBlocksPerRun = NEAR_MAX_BLOCKS_PER_RUN;
+    const payload = await fetchFinalBlock(rpcManager);
     const latestHeight = payload.result?.header?.height;
     const latestHash = payload.result?.header?.hash;
 
     if (!latestHeight || !latestHash) {
       throw new Error("NEAR response did not include final block height/hash.");
     }
+
+    await prisma.$transaction([
+      prisma.indexerCheckpoint.upsert({
+        where: { key: CHECKPOINT_CHAIN_HEAD_HEIGHT },
+        create: { key: CHECKPOINT_CHAIN_HEAD_HEIGHT, value: String(latestHeight) },
+        update: { value: String(latestHeight) },
+      }),
+      prisma.indexerCheckpoint.upsert({
+        where: { key: CHECKPOINT_CHAIN_HEAD_HASH },
+        create: { key: CHECKPOINT_CHAIN_HEAD_HASH, value: latestHash },
+        update: { value: latestHash },
+      }),
+    ]);
 
     const [heightCheckpoint, scannedHeightCheckpoint] = await Promise.all([
       prisma.indexerCheckpoint.findUnique({
@@ -911,6 +874,16 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       configuredBackfillStartHeight !== null
         ? Math.max(computedStartHeight, configuredBackfillStartHeight)
         : computedStartHeight;
+
+    // Persist the origin of the backfill on the first ever run. `create`-only
+    // upsert behavior: the record sticks once written, so future runs never
+    // overwrite the historical starting point.
+    await prisma.indexerCheckpoint.upsert({
+      where: { key: CHECKPOINT_BACKFILL_START_ORIGIN },
+      create: { key: CHECKPOINT_BACKFILL_START_ORIGIN, value: String(startHeight) },
+      update: {},
+    });
+
     const targetHeight = Math.min(latestHeight, startHeight + maxBlocksPerRun - 1);
     const startedAt = Date.now();
 
@@ -922,8 +895,8 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         targetHeight,
         latestHeight,
         maxBlocksPerRun,
-        blockConcurrency: resolveBlockConcurrency(),
-        chunkConcurrency: resolveChunkConcurrency(),
+        blockConcurrency: NEAR_BLOCK_CONCURRENCY,
+        chunkConcurrency: NEAR_CHUNK_CONCURRENCY,
       }),
     );
 
@@ -938,8 +911,8 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
     // leaving gaps when parallel workers complete out of order.
     const completedHeights = new Set<number>();
 
-    const blockConcurrency = resolveBlockConcurrency();
-    const chunkConcurrency = resolveChunkConcurrency();
+    const blockConcurrency = NEAR_BLOCK_CONCURRENCY;
+    const chunkConcurrency = NEAR_CHUNK_CONCURRENCY;
     const heights: number[] = [];
     for (let h = startHeight; h <= targetHeight; h += 1) {
       heights.push(h);
@@ -953,7 +926,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         blockPayload =
           height === latestHeight
             ? payload
-            : await fetchBlockByHeight(historyRpcManager, height);
+            : await fetchBlockByHeight(rpcManager, height);
       } catch (error) {
         if (isSkippableMissingHeightError(error)) {
           processed += 1;
@@ -983,7 +956,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
 
       const chunkPayloads: NearChunkResponse[] = new Array(chunkHashes.length);
       await runWithConcurrency(chunkHashes, chunkConcurrency, async (chunkHash, idx) => {
-        chunkPayloads[idx] = await fetchChunkByHash(historyRpcManager, chunkHash);
+        chunkPayloads[idx] = await fetchChunkByHash(rpcManager, chunkHash);
       });
 
       for (const chunkPayload of chunkPayloads) {

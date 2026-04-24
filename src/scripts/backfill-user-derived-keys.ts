@@ -1,9 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-import {
-  NearRpcManager,
-  resolveNormalNearRpcManagerUrlsFromEnv,
-} from "@/lib/indexers/near-rpc-manager";
+import { createNearRpcManager, type NearRpcManager } from "@/lib/indexers/near-rpc-manager";
 
 type FastAuthActionArgs = {
   guard_id?: string;
@@ -289,7 +286,7 @@ async function fetchDerivedPublicKey(params: {
 
 async function main(): Promise<void> {
   const prisma = new PrismaClient();
-  const rpcManager = new NearRpcManager(resolveNormalNearRpcManagerUrlsFromEnv());
+  const rpcManager = createNearRpcManager();
   const lookupUrlTemplate = resolveLookupUrlTemplate();
   const batchSize = resolveBatchSize();
 

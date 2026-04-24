@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spacing / Radii / Elevation</title>
+<link rel="stylesheet" href="../tokens/colors_and_type.css">
+<style>
+  body { margin: 0; padding: 48px; background: var(--color-canvas); font-family: var(--font-sans); color: var(--color-ink); }
+  h1.page { font-size: 40px; line-height: 48px; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin-bottom: 8px; }
+  .lede { color: var(--color-ink-subtle); font-size: 16px; line-height: 28px; margin: 0 0 40px; max-width: 60ch; }
+  h2.section { font-size: 14px; line-height: 20px; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-subtle); margin: 40px 0 16px; }
+
+  .grid { display: grid; gap: 12px; }
+  .r5 { grid-template-columns: repeat(5, 1fr); }
+  .r3 { grid-template-columns: repeat(3, 1fr); }
+  .r7 { grid-template-columns: repeat(7, 1fr); }
+
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); padding: 24px; border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
+  .rad-demo { height: 110px; background: var(--color-ink); margin-bottom: 16px; }
+  .name { font-weight: 600; font-size: 14px; }
+  .tok { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-subtle); margin-top: 4px; }
+
+  .shadow-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 28px; min-height: 110px; display: flex; align-items: center; justify-content: center; }
+  .sh1 { box-shadow: var(--shadow-card); border: 1px solid var(--color-border); }
+  .sh2 { box-shadow: var(--shadow-inset-soft); border: 1px solid var(--color-border); }
+  .sh3 { box-shadow: var(--shadow-inset-header); background: var(--color-surface-muted); }
+
+  .sp { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; box-shadow: var(--shadow-card); }
+  .sp-bar { background: var(--color-mint); height: 16px; border-radius: 4px; }
+
+  .preview-label { font-family: var(--font-mono); font-size: 12px; color: var(--color-ink-subtle); }
+</style>
+</head>
+<body>
+  <div class="kicker">Design System · 03</div>
+  <h1 class="page">Spacing · Radii · Elevation</h1>
+  <p class="lede">Soft edges, a single card shadow, and a calm 4/8/12/16/24/32/48 spacing rhythm. Nothing decorative.</p>
+
+  <h2 class="section">Radius</h2>
+  <div class="grid r5">
+    <div class="card"><div class="rad-demo" style="border-radius:8px"></div><div class="name">Small · 8px</div><div class="tok">--radius-sm</div></div>
+    <div class="card"><div class="rad-demo" style="border-radius:12px"></div><div class="name">Medium · 12px</div><div class="tok">--radius-md · default cards</div></div>
+    <div class="card"><div class="rad-demo" style="border-radius:16px"></div><div class="name">Large · 16px</div><div class="tok">--radius-lg</div></div>
+    <div class="card"><div class="rad-demo" style="border-radius:24px"></div><div class="name">XL · 24px</div><div class="tok">--radius-xl</div></div>
+    <div class="card"><div class="rad-demo" style="border-radius:100px"></div><div class="name">Pill · 100px</div><div class="tok">--radius-pill · buttons, badges</div></div>
+  </div>
+
+  <h2 class="section">Elevation</h2>
+  <div class="grid r3">
+    <div class="card"><div class="shadow-card sh1">card shadow</div><div class="name" style="margin-top:16px">Card</div><div class="tok">--shadow-card · 0 0 8px rgba(0,0,0,.08)</div></div>
+    <div class="card"><div class="shadow-card sh2">inset soft</div><div class="name" style="margin-top:16px">Inset Soft</div><div class="tok">--shadow-inset-soft</div></div>
+    <div class="card"><div class="shadow-card sh3">inset header</div><div class="name" style="margin-top:16px">Inset Header</div><div class="tok">--shadow-inset-header</div></div>
+  </div>
+
+  <h2 class="section">Spacing</h2>
+  <div class="grid r7">
+    <div class="sp"><div class="sp-bar" style="width:4px"></div><div class="name">4</div><div class="preview-label">xs</div></div>
+    <div class="sp"><div class="sp-bar" style="width:8px"></div><div class="name">8</div><div class="preview-label">sm</div></div>
+    <div class="sp"><div class="sp-bar" style="width:12px"></div><div class="name">12</div><div class="preview-label">gutter</div></div>
+    <div class="sp"><div class="sp-bar" style="width:16px"></div><div class="name">16</div><div class="preview-label">md</div></div>
+    <div class="sp"><div class="sp-bar" style="width:24px"></div><div class="name">24</div><div class="preview-label">card pad</div></div>
+    <div class="sp"><div class="sp-bar" style="width:32px"></div><div class="name">32</div><div class="preview-label">panel pad</div></div>
+    <div class="sp"><div class="sp-bar" style="width:48px"></div><div class="name">48</div><div class="preview-label">page pad</div></div>
+  </div>
+</body>
+</html>
