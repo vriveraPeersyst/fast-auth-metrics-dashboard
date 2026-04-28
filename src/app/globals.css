@@ -363,7 +363,8 @@ h3 {
 }
 
 .metricsGrid--dense {
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -405,10 +406,10 @@ h3 {
 }
 
 .metricCard--small {
-  grid-column: span 1;
+  flex: 1 1 auto;
+  width: max-content;
   padding: 16px;
   min-height: 92px;
-  min-width: 0;
 }
 
 .metricCard--small h2 {
@@ -424,7 +425,7 @@ h3 {
   margin-top: 8px;
   font-size: 22px;
   line-height: 28px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 /* Panel / card surfaces */
@@ -519,14 +520,14 @@ h3 {
 
 .healthMetaList {
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(94px, max-content) 1fr;
+  column-gap: 12px;
+  row-gap: 8px;
+  align-items: baseline;
 }
 
-.healthMetaList div {
-  display: grid;
-  grid-template-columns: minmax(94px, auto) 1fr;
-  gap: 12px;
-  align-items: baseline;
+.healthMetaList > div {
+  display: contents;
 }
 
 .healthMetaList dt {
@@ -604,6 +605,84 @@ h3 {
 .uptimeBarFill--stale,
 .uptimeBarFill--no_data {
   background: var(--color-status-err);
+}
+
+/* Segmented uptime bar (statuspage-style) */
+.statusUptime {
+  display: grid;
+  gap: 8px;
+}
+
+.statusUptimeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.statusUptimeLabel {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+  font-weight: 700;
+}
+
+.statusUptimeSummary {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.statusUptimeHint {
+  font-weight: 400;
+  color: var(--color-ink-subtle);
+}
+
+.statusUptimeTrack {
+  display: flex;
+  gap: 1px;
+  width: 100%;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  padding: 2px;
+}
+
+.statusUptimeSegment {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 1px;
+  transition: opacity 120ms ease;
+}
+
+.statusUptimeSegment:hover {
+  opacity: 0.8;
+}
+
+.statusUptimeSegment--healthy {
+  background: var(--color-status-ok);
+}
+
+.statusUptimeSegment--lagging {
+  background: var(--color-status-warn);
+}
+
+.statusUptimeSegment--stale {
+  background: var(--color-status-err);
+}
+
+.statusUptimeSegment--no_data {
+  background: var(--color-border);
+}
+
+.statusUptimeEmpty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-subtle);
+  padding: 8px 0;
 }
 
 /* Tables */
@@ -833,14 +912,6 @@ tbody tr:hover {
     grid-column: span 3;
   }
 
-  .metricsGrid--dense {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .metricCard--small {
-    grid-column: span 1;
-  }
-
   .healthGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -872,14 +943,6 @@ tbody tr:hover {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
-  }
-
-  .metricsGrid--dense {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .metricCard--small {
-    grid-column: span 1;
   }
 
   .healthGrid {

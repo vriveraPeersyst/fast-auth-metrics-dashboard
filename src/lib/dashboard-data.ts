@@ -16,6 +16,7 @@ type TimeWindowMetrics = {
   last24h: number;
   last7d: number;
   last30d: number;
+  all: number;
 };
 
 type AggregateAccountsMetrics = {
@@ -58,6 +59,8 @@ type RecentSignEvent = {
   algorithm: string | null;
   userDomainId: number | null;
   userDerivedPublicKey: string | null;
+  userAccountId: string | null;
+  signActionType: string | null;
   projectDappId: string | null;
   sponsoredAccountId: string | null;
   executionStatus: string | null;
@@ -131,6 +134,7 @@ type FastAuthChainHealth = {
   totalTransactions: number;
   successfulTransactions: number;
   failedTransactions: number;
+  guardFailedTransactions: number;
   successRatePct: number | null;
   distinctRelayers: number;
   lastSuccessTimestamp: Date | null;
@@ -138,12 +142,75 @@ type FastAuthChainHealth = {
   minutesSinceLastSuccess: number | null;
 };
 
+type MpcChainHealth = {
+  computedAt: Date;
+  attemptedTransactions: number;
+  failedTransactions: number;
+  successfulTransactions: number;
+  successRatePct: number | null;
+};
+
+type ChainHealthHistoryPoint = {
+  computedAt: Date;
+  totalTransactions: number;
+  fastAuthSuccessRatePct: number | null;
+  mpcAttempted: number;
+  mpcFailed: number;
+  mpcSuccessRatePct: number | null;
+};
+
+type GuardWindowStats = {
+  signed: number;
+  failed: number;
+  total: number;
+  distinctUsers: number;
+  successRatePct: number | null;
+};
+
+type GuardBreakdownItem = {
+  guardName: string;
+  last24h: GuardWindowStats;
+  last7d: GuardWindowStats;
+  last30d: GuardWindowStats;
+};
+
+type ProviderBreakdownItem = {
+  providerType: string;
+  last24h: GuardWindowStats;
+  last7d: GuardWindowStats;
+  last30d: GuardWindowStats;
+};
+
+type ActionTypeBreakdownItem = {
+  actionType: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+};
+
+type TopAccountRow = {
+  accountId: string;
+  signEventsAll: number;
+  signEvents30d: number;
+  signEvents7d: number;
+  signEvents24h: number;
+  firstEventAt: Date | null;
+  lastEventAt: Date | null;
+};
+
 type DashboardData = {
   accountsOverview: AggregateAccountsMetrics;
   transactionOverview: TransactionMetrics;
+  providerBreakdown: ProviderBreakdownItem[];
+  guardBreakdown: GuardBreakdownItem[];
+  actionTypeBreakdown: ActionTypeBreakdownItem[];
+  topAccounts: TopAccountRow[];
   latestNearFinalBlock: string | null;
   indexerLag: IndexerLag;
   fastAuthChainHealth: FastAuthChainHealth | null;
+  mpcChainHealth: MpcChainHealth | null;
+  chainHealthHistory: ChainHealthHistoryPoint[];
   missingBlockRanges: MissingBlockRange[];
   collectorHealth: CollectorHealth[];
   relayerBreakdown: RelayerBreakdownItem[];
@@ -159,6 +226,335 @@ const MAX_UNIQUE_SPONSORED_ACCOUNTS_TO_DISPLAY = 12;
 const MAX_RECENT_NEAR_TRANSACTIONS = 8;
 const MAX_RECENT_SIGN_EVENTS = 12;
 const MAX_PUBLIC_KEY_ACCOUNTS = 12;
+const MAX_TOP_ACCOUNTS = 50;
+
+async function loadGuardBreakdown(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+  failureWhere: object,
+): Promise<GuardBreakdownItem[]> {
+  const windows: Array<{ key: "last24h" | "last7d" | "last30d"; gte: Date }> = [
+    { key: "last24h", gte: last24h },
+    { key: "last7d", gte: last7d },
+    { key: "last30d", gte: last30d },
+  ];
+
+  const queries = windows.flatMap((w) => [
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["guardName"],
+      where: { blockTimestamp: { gte: w.gte } },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["guardName"],
+      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.findMany({
+      where: {
+        blockTimestamp: { gte: w.gte },
+        userDerivedPublicKey: { not: null },
+      },
+      distinct: ["guardName", "userDerivedPublicKey"],
+      select: { guardName: true },
+    }),
+  ]);
+
+  const results = await Promise.all(queries);
+
+  // Sentinel for null guardName so the Map can still key it.
+  const NULL_KEY = "__null__";
+  const toKey = (guardName: string | null): string => guardName ?? NULL_KEY;
+  const fromKey = (key: string): string => (key === NULL_KEY ? "(unnamed)" : key);
+
+  const allKeys = new Set<string>();
+  const perWindow = new Map<
+    "last24h" | "last7d" | "last30d",
+    Map<string, GuardWindowStats>
+  >();
+
+  windows.forEach((w, i) => {
+    const totalRows = results[i * 3] as Array<{
+      guardName: string | null;
+      _count: { id: number };
+    }>;
+    const failedRows = results[i * 3 + 1] as Array<{
+      guardName: string | null;
+      _count: { id: number };
+    }>;
+    const distinctRows = results[i * 3 + 2] as Array<{ guardName: string | null }>;
+
+    const map = new Map<string, GuardWindowStats>();
+
+    for (const row of totalRows) {
+      const key = toKey(row.guardName);
+      allKeys.add(key);
+      map.set(key, {
+        signed: row._count.id,
+        failed: 0,
+        total: row._count.id,
+        distinctUsers: 0,
+        successRatePct: null,
+      });
+    }
+
+    for (const row of failedRows) {
+      const key = toKey(row.guardName);
+      const stats = map.get(key);
+      if (stats) {
+        stats.failed = row._count.id;
+        stats.signed = Math.max(0, stats.total - row._count.id);
+      } else {
+        allKeys.add(key);
+        map.set(key, {
+          signed: 0,
+          failed: row._count.id,
+          total: row._count.id,
+          distinctUsers: 0,
+          successRatePct: null,
+        });
+      }
+    }
+
+    const distinctCounts = new Map<string, number>();
+    for (const row of distinctRows) {
+      const key = toKey(row.guardName);
+      distinctCounts.set(key, (distinctCounts.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of distinctCounts) {
+      const stats = map.get(key);
+      if (stats) {
+        stats.distinctUsers = count;
+      }
+    }
+
+    for (const stats of map.values()) {
+      if (stats.total > 0) {
+        stats.successRatePct = Math.round((stats.signed / stats.total) * 1000) / 10;
+      }
+    }
+
+    perWindow.set(w.key, map);
+  });
+
+  const emptyStats: GuardWindowStats = {
+    signed: 0,
+    failed: 0,
+    total: 0,
+    distinctUsers: 0,
+    successRatePct: null,
+  };
+
+  return [...allKeys]
+    .map((key) => ({
+      guardName: fromKey(key),
+      last24h: perWindow.get("last24h")?.get(key) ?? { ...emptyStats },
+      last7d: perWindow.get("last7d")?.get(key) ?? { ...emptyStats },
+      last30d: perWindow.get("last30d")?.get(key) ?? { ...emptyStats },
+    }))
+    .sort((a, b) => b.last30d.total - a.last30d.total);
+}
+
+async function loadProviderBreakdown(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+  failureWhere: object,
+): Promise<ProviderBreakdownItem[]> {
+  const windows: Array<{ key: "last24h" | "last7d" | "last30d"; gte: Date }> = [
+    { key: "last24h", gte: last24h },
+    { key: "last7d", gte: last7d },
+    { key: "last30d", gte: last30d },
+  ];
+
+  const queries = windows.flatMap((w) => [
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["providerType"],
+      where: { blockTimestamp: { gte: w.gte } },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["providerType"],
+      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.findMany({
+      where: {
+        blockTimestamp: { gte: w.gte },
+        userDerivedPublicKey: { not: null },
+      },
+      distinct: ["providerType", "userDerivedPublicKey"],
+      select: { providerType: true },
+    }),
+  ]);
+
+  const results = await Promise.all(queries);
+
+  const allKeys = new Set<string>();
+  const perWindow = new Map<
+    "last24h" | "last7d" | "last30d",
+    Map<string, GuardWindowStats>
+  >();
+
+  windows.forEach((w, i) => {
+    const totalRows = results[i * 3] as Array<{
+      providerType: string;
+      _count: { id: number };
+    }>;
+    const failedRows = results[i * 3 + 1] as Array<{
+      providerType: string;
+      _count: { id: number };
+    }>;
+    const distinctRows = results[i * 3 + 2] as Array<{ providerType: string }>;
+
+    const map = new Map<string, GuardWindowStats>();
+
+    for (const row of totalRows) {
+      allKeys.add(row.providerType);
+      map.set(row.providerType, {
+        signed: row._count.id,
+        failed: 0,
+        total: row._count.id,
+        distinctUsers: 0,
+        successRatePct: null,
+      });
+    }
+
+    for (const row of failedRows) {
+      const stats = map.get(row.providerType);
+      if (stats) {
+        stats.failed = row._count.id;
+        stats.signed = Math.max(0, stats.total - row._count.id);
+      } else {
+        allKeys.add(row.providerType);
+        map.set(row.providerType, {
+          signed: 0,
+          failed: row._count.id,
+          total: row._count.id,
+          distinctUsers: 0,
+          successRatePct: null,
+        });
+      }
+    }
+
+    const distinctCounts = new Map<string, number>();
+    for (const row of distinctRows) {
+      distinctCounts.set(row.providerType, (distinctCounts.get(row.providerType) ?? 0) + 1);
+    }
+    for (const [providerType, count] of distinctCounts) {
+      const stats = map.get(providerType);
+      if (stats) {
+        stats.distinctUsers = count;
+      }
+    }
+
+    for (const stats of map.values()) {
+      if (stats.total > 0) {
+        stats.successRatePct = Math.round((stats.signed / stats.total) * 1000) / 10;
+      }
+    }
+
+    perWindow.set(w.key, map);
+  });
+
+  const emptyStats: GuardWindowStats = {
+    signed: 0,
+    failed: 0,
+    total: 0,
+    distinctUsers: 0,
+    successRatePct: null,
+  };
+
+  return [...allKeys]
+    .map((providerType) => ({
+      providerType,
+      last24h: perWindow.get("last24h")?.get(providerType) ?? { ...emptyStats },
+      last7d: perWindow.get("last7d")?.get(providerType) ?? { ...emptyStats },
+      last30d: perWindow.get("last30d")?.get(providerType) ?? { ...emptyStats },
+    }))
+    .sort((a, b) => b.last30d.total - a.last30d.total);
+}
+
+async function loadActionTypeBreakdown(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+): Promise<ActionTypeBreakdownItem[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      action_type: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+    }>
+  >`
+    SELECT
+      sign_action_type AS action_type,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h
+    FROM fastauth_sign_events
+    GROUP BY sign_action_type
+    ORDER BY total_all DESC
+  `;
+
+  return rows.map((row) => ({
+    actionType: row.action_type ?? "(unclassified)",
+    last24h: Number(row.total_24h),
+    last7d: Number(row.total_7d),
+    last30d: Number(row.total_30d),
+    all: Number(row.total_all),
+  }));
+}
+
+async function loadTopAccounts(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+  limit: number,
+): Promise<TopAccountRow[]> {
+  // One round-trip with conditional aggregations across all four windows.
+  // Filtering on user_account_id ensures we only count events whose owner
+  // has been resolved by the public-key-accounts collector.
+  const rows = await prisma.$queryRaw<
+    Array<{
+      account_id: string;
+      sign_events_all: bigint;
+      sign_events_30d: bigint;
+      sign_events_7d: bigint;
+      sign_events_24h: bigint;
+      first_event_at: Date | null;
+      last_event_at: Date | null;
+    }>
+  >`
+    SELECT
+      user_account_id AS account_id,
+      COUNT(*) AS sign_events_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS sign_events_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS sign_events_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS sign_events_24h,
+      MIN(block_timestamp) AS first_event_at,
+      MAX(block_timestamp) AS last_event_at
+    FROM fastauth_sign_events
+    WHERE user_account_id IS NOT NULL
+    GROUP BY user_account_id
+    ORDER BY sign_events_all DESC
+    LIMIT ${limit}
+  `;
+
+  return rows.map((row) => ({
+    accountId: row.account_id,
+    signEventsAll: Number(row.sign_events_all),
+    signEvents30d: Number(row.sign_events_30d),
+    signEvents7d: Number(row.sign_events_7d),
+    signEvents24h: Number(row.sign_events_24h),
+    firstEventAt: row.first_event_at,
+    lastEventAt: row.last_event_at,
+  }));
+}
 
 async function loadMissingBlockRanges(): Promise<MissingBlockRange[]> {
   let rows: Awaited<ReturnType<typeof prisma.missingBlockRange.findMany>>;
@@ -283,6 +679,11 @@ export async function getDashboardData(): Promise<DashboardData> {
     ],
   };
 
+  const guardBreakdownPromise = loadGuardBreakdown(last24h, last7d, last30d, failureWhere);
+  const providerBreakdownPromise = loadProviderBreakdown(last24h, last7d, last30d, failureWhere);
+  const topAccountsPromise = loadTopAccounts(last24h, last7d, last30d, MAX_TOP_ACCOUNTS);
+  const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
+
   const [
     accountsTotal,
     accountsCreated24h,
@@ -297,11 +698,13 @@ export async function getDashboardData(): Promise<DashboardData> {
     signFailed24h,
     signFailed7d,
     signFailed30d,
+    signFailedAll,
     nearHeightCheckpoint,
     nearScannedCheckpoint,
     nearChainHeadCheckpoint,
     nearBackfillOriginCheckpoint,
     latestFastAuthChainHealth,
+    chainHealthHistoryRows,
     lastNearTransaction,
     relayerRows,
     relayerSponsoredPairsAllTime,
@@ -332,11 +735,24 @@ export async function getDashboardData(): Promise<DashboardData> {
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last24h }, ...failureWhere } }),
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last7d }, ...failureWhere } }),
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last30d }, ...failureWhere } }),
+    prisma.fastAuthSignEvent.count({ where: failureWhere }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_final_block_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_scanned_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_chain_head_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_backfill_start_origin" } }),
     prisma.fastAuthChainHealthSnapshot.findFirst({ orderBy: { computedAt: "desc" } }),
+    prisma.fastAuthChainHealthSnapshot.findMany({
+      where: { computedAt: { gte: last24h } },
+      orderBy: { computedAt: "asc" },
+      select: {
+        computedAt: true,
+        totalTransactions: true,
+        successfulTransactions: true,
+        failedTransactions: true,
+        mpcAttemptedTransactions: true,
+        mpcFailedTransactions: true,
+      },
+    }),
     prisma.nearTransaction.findFirst({ orderBy: { createdAt: "desc" } }),
     prisma.relayer.findMany({
       orderBy: { totalSignTransactions: "desc" },
@@ -398,6 +814,8 @@ export async function getDashboardData(): Promise<DashboardData> {
         algorithm: true,
         userDomainId: true,
         userDerivedPublicKey: true,
+        userAccountId: true,
+        signActionType: true,
         projectDappId: true,
         sponsoredAccountId: true,
         executionStatus: true,
@@ -431,18 +849,43 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const accountsOverview: AggregateAccountsMetrics = {
     totalAccounts: accountsTotal,
-    created: { last24h: accountsCreated24h, last7d: accountsCreated7d, last30d: accountsCreated30d },
-    active: { last24h: accountsActive24h, last7d: accountsActive7d, last30d: accountsActive30d },
+    // "Created all" = lifetime accounts ever observed by the indexer.
+    // "Active all" = same set, since every account has a lastSeenAt; both
+    // collapse to accountsTotal in the all-time column.
+    created: {
+      last24h: accountsCreated24h,
+      last7d: accountsCreated7d,
+      last30d: accountsCreated30d,
+      all: accountsTotal,
+    },
+    active: {
+      last24h: accountsActive24h,
+      last7d: accountsActive7d,
+      last30d: accountsActive30d,
+      all: accountsTotal,
+    },
   };
 
+  const signTotalAll = fastAuthSignEventsTotalCount;
   const transactionOverview: TransactionMetrics = {
     signed: {
       last24h: Math.max(0, signTotal24h - signFailed24h),
       last7d: Math.max(0, signTotal7d - signFailed7d),
       last30d: Math.max(0, signTotal30d - signFailed30d),
+      all: Math.max(0, signTotalAll - signFailedAll),
     },
-    failed: { last24h: signFailed24h, last7d: signFailed7d, last30d: signFailed30d },
-    total: { last24h: signTotal24h, last7d: signTotal7d, last30d: signTotal30d },
+    failed: {
+      last24h: signFailed24h,
+      last7d: signFailed7d,
+      last30d: signFailed30d,
+      all: signFailedAll,
+    },
+    total: {
+      last24h: signTotal24h,
+      last7d: signTotal7d,
+      last30d: signTotal30d,
+      all: signTotalAll,
+    },
   };
 
   function buildSponsoredMap(
@@ -539,6 +982,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     algorithm: event.algorithm,
     userDomainId: event.userDomainId,
     userDerivedPublicKey: event.userDerivedPublicKey,
+    userAccountId: event.userAccountId,
+    signActionType: event.signActionType,
     projectDappId: event.projectDappId,
     sponsoredAccountId: event.sponsoredAccountId,
     executionStatus: event.executionStatus,
@@ -575,6 +1020,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         totalTransactions: latestFastAuthChainHealth.totalTransactions,
         successfulTransactions: latestFastAuthChainHealth.successfulTransactions,
         failedTransactions: latestFastAuthChainHealth.failedTransactions,
+        guardFailedTransactions: latestFastAuthChainHealth.guardFailedTransactions,
         successRatePct:
           latestFastAuthChainHealth.totalTransactions > 0
             ? Math.round(
@@ -598,6 +1044,47 @@ export async function getDashboardData(): Promise<DashboardData> {
       }
     : null;
 
+  const mpcChainHealth: MpcChainHealth | null = latestFastAuthChainHealth
+    ? {
+        computedAt: latestFastAuthChainHealth.computedAt,
+        attemptedTransactions: latestFastAuthChainHealth.mpcAttemptedTransactions,
+        failedTransactions: latestFastAuthChainHealth.mpcFailedTransactions,
+        successfulTransactions: Math.max(
+          0,
+          latestFastAuthChainHealth.mpcAttemptedTransactions -
+            latestFastAuthChainHealth.mpcFailedTransactions,
+        ),
+        successRatePct:
+          latestFastAuthChainHealth.mpcAttemptedTransactions > 0
+            ? Math.round(
+                ((latestFastAuthChainHealth.mpcAttemptedTransactions -
+                  latestFastAuthChainHealth.mpcFailedTransactions) /
+                  latestFastAuthChainHealth.mpcAttemptedTransactions) *
+                  1000,
+              ) / 10
+            : null,
+      }
+    : null;
+
+  const chainHealthHistory: ChainHealthHistoryPoint[] = chainHealthHistoryRows.map((row) => ({
+    computedAt: row.computedAt,
+    totalTransactions: row.totalTransactions,
+    fastAuthSuccessRatePct:
+      row.totalTransactions > 0
+        ? Math.round((row.successfulTransactions / row.totalTransactions) * 1000) / 10
+        : null,
+    mpcAttempted: row.mpcAttemptedTransactions,
+    mpcFailed: row.mpcFailedTransactions,
+    mpcSuccessRatePct:
+      row.mpcAttemptedTransactions > 0
+        ? Math.round(
+            ((row.mpcAttemptedTransactions - row.mpcFailedTransactions) /
+              row.mpcAttemptedTransactions) *
+              1000,
+          ) / 10
+        : null,
+  }));
+
   const indexerLag: IndexerLag = {
     chainHead: chainHeadValue,
     scannedHeight: scannedHeightValue,
@@ -608,12 +1095,23 @@ export async function getDashboardData(): Promise<DashboardData> {
     lastScannedCheckpointAt: nearScannedCheckpoint?.updatedAt ?? null,
   };
 
+  const guardBreakdown = await guardBreakdownPromise;
+  const providerBreakdown = await providerBreakdownPromise;
+  const topAccounts = await topAccountsPromise;
+  const actionTypeBreakdown = await actionTypeBreakdownPromise;
+
   return {
     accountsOverview,
     transactionOverview,
+    providerBreakdown,
+    guardBreakdown,
+    actionTypeBreakdown,
+    topAccounts,
     latestNearFinalBlock: nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null,
     indexerLag,
     fastAuthChainHealth,
+    mpcChainHealth,
+    chainHealthHistory,
     missingBlockRanges: await loadMissingBlockRanges(),
     collectorHealth,
     relayerBreakdown,

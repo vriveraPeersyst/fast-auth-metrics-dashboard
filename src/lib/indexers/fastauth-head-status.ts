@@ -10,6 +10,7 @@ const CHAIN_HEALTH_WINDOW_BLOCKS = 300;
 const CHAIN_HEALTH_MIN_INTERVAL_MS = 600_000;
 const CHAIN_HEALTH_BLOCK_CONCURRENCY = 20;
 const CHAIN_HEALTH_CHUNK_CONCURRENCY = 6;
+const CHAIN_HEALTH_TX_STATUS_CONCURRENCY = 8;
 
 type NearBlockResponse = {
   result?: {
@@ -39,6 +40,25 @@ type NearChunkResponse = {
   };
 };
 
+type NearReceiptOutcome = {
+  outcome?: {
+    executor_id?: string;
+    status?: unknown;
+  };
+};
+
+type NearTxStatusResponse = {
+  result?: {
+    transaction_outcome?: {
+      outcome?: {
+        executor_id?: string;
+        status?: unknown;
+      };
+    };
+    receipts_outcome?: NearReceiptOutcome[];
+  };
+};
+
 function resolveFastAuthContractIds(): string[] {
   const raw = process.env.FASTAUTH_CONTRACT_IDS;
   if (!raw) {
@@ -49,6 +69,21 @@ function resolveFastAuthContractIds(): string[] {
     .split(",")
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
+}
+
+// Mirrors resolveMpcContractId in public-key-accounts.ts: configurable via env,
+// falls back to v1.signer (mainnet) or v1.signer-prod.testnet (testnet).
+function resolveMpcContractIds(fastAuthContractIds: string[]): Set<string> {
+  const ids = new Set<string>();
+  const configured = process.env.FASTAUTH_MPC_CONTRACT_ID?.trim();
+  if (configured) {
+    ids.add(configured.toLowerCase());
+  }
+
+  for (const fa of fastAuthContractIds) {
+    ids.add(fa.endsWith(".testnet") ? "v1.signer-prod.testnet" : "v1.signer");
+  }
+  return ids;
 }
 
 async function runWithConcurrency<T>(
@@ -112,6 +147,15 @@ function isFailureStatus(status: unknown): boolean {
   return false;
 }
 
+type CandidateTx = {
+  hash: string;
+  signerId: string;
+  receiverId: string;
+  blockHeight: number;
+  blockTimestamp: Date | null;
+  conversionFailed: boolean;
+};
+
 export async function collectFastAuthChainHealth(
   prisma: PrismaClient,
 ): Promise<IndexerRunResult> {
@@ -125,6 +169,8 @@ export async function collectFastAuthChainHealth(
       details: "FASTAUTH_CONTRACT_IDS not configured.",
     };
   }
+
+  const mpcContractSet = resolveMpcContractIds(fastAuthContractIds);
 
   const minIntervalMs = CHAIN_HEALTH_MIN_INTERVAL_MS;
   const lastRunCheckpoint = await prisma.indexerCheckpoint.findUnique({
@@ -162,18 +208,10 @@ export async function collectFastAuthChainHealth(
       heights.push(h);
     }
 
-    const blockConcurrency = CHAIN_HEALTH_BLOCK_CONCURRENCY;
-    const chunkConcurrency = CHAIN_HEALTH_CHUNK_CONCURRENCY;
-
-    let totalTransactions = 0;
-    let successfulTransactions = 0;
-    let failedTransactions = 0;
-    let lastSuccessTimestamp: Date | null = null;
-    let lastSuccessTxHash: string | null = null;
-    let lastSuccessBlockHeight = -1;
+    const candidates: CandidateTx[] = [];
     const distinctRelayers = new Set<string>();
 
-    await runWithConcurrency(heights, blockConcurrency, async (height) => {
+    await runWithConcurrency(heights, CHAIN_HEALTH_BLOCK_CONCURRENCY, async (height) => {
       let blockPayload: NearBlockResponse;
       try {
         blockPayload = await rpcManager.request<NearBlockResponse>(
@@ -196,7 +234,7 @@ export async function collectFastAuthChainHealth(
       const blockTimestamp = toDateFromNearNs(blockPayload.result?.header?.timestamp);
 
       const chunkPayloads: NearChunkResponse[] = new Array(chunkHashes.length);
-      await runWithConcurrency(chunkHashes, chunkConcurrency, async (chunkHash, idx) => {
+      await runWithConcurrency(chunkHashes, CHAIN_HEALTH_CHUNK_CONCURRENCY, async (chunkHash, idx) => {
         try {
           chunkPayloads[idx] = await rpcManager.request<NearChunkResponse>(
             "chunk",
@@ -215,27 +253,117 @@ export async function collectFastAuthChainHealth(
           if (!receiver || !fastAuthContractSet.has(receiver)) {
             continue;
           }
+          if (!tx.hash || !tx.signer_id) {
+            continue;
+          }
 
-          totalTransactions += 1;
           if (tx.signer_id) {
             distinctRelayers.add(tx.signer_id.trim().toLowerCase());
           }
 
-          const failed = isFailureStatus(tx.outcome?.outcome?.status);
-          if (failed) {
-            failedTransactions += 1;
-            continue;
-          }
-
-          successfulTransactions += 1;
-          if (height > lastSuccessBlockHeight) {
-            lastSuccessBlockHeight = height;
-            lastSuccessTxHash = tx.hash ?? null;
-            lastSuccessTimestamp = blockTimestamp;
-          }
+          candidates.push({
+            hash: tx.hash,
+            signerId: tx.signer_id,
+            receiverId: receiver,
+            blockHeight: height,
+            blockTimestamp,
+            conversionFailed: isFailureStatus(tx.outcome?.outcome?.status),
+          });
         }
       }
     });
+
+    const totalTransactions = candidates.length;
+    let successfulTransactions = 0;
+    let failedTransactions = 0;
+    let guardFailedTransactions = 0;
+    let mpcAttemptedTransactions = 0;
+    let mpcFailedTransactions = 0;
+    let lastSuccessTimestamp: Date | null = null;
+    let lastSuccessTxHash: string | null = null;
+    let lastSuccessBlockHeight = -1;
+
+    await runWithConcurrency(
+      candidates,
+      CHAIN_HEALTH_TX_STATUS_CONCURRENCY,
+      async (candidate) => {
+        // Pre-receipt conversion failures never reach MPC; classify as guard.
+        if (candidate.conversionFailed) {
+          failedTransactions += 1;
+          guardFailedTransactions += 1;
+          return;
+        }
+
+        let txStatus: NearTxStatusResponse | null = null;
+        try {
+          txStatus = await rpcManager.request<NearTxStatusResponse>(
+            "tx",
+            [candidate.hash, candidate.signerId],
+            `fastauth-head-status:tx ${candidate.hash}`,
+          );
+        } catch {
+          // Could not classify — count optimistically as success but don't
+          // attribute to MPC. Failed-attribution is preferable to silently
+          // dropping the tx.
+          successfulTransactions += 1;
+          if (candidate.blockHeight > lastSuccessBlockHeight) {
+            lastSuccessBlockHeight = candidate.blockHeight;
+            lastSuccessTxHash = candidate.hash;
+            lastSuccessTimestamp = candidate.blockTimestamp;
+          }
+          return;
+        }
+
+        const receipts = txStatus.result?.receipts_outcome ?? [];
+        let reachedMpc = false;
+        let firstFailingExecutor: string | null = null;
+
+        for (const receipt of receipts) {
+          const executor = receipt.outcome?.executor_id?.trim().toLowerCase() ?? null;
+          if (executor && mpcContractSet.has(executor)) {
+            reachedMpc = true;
+          }
+          if (firstFailingExecutor === null && isFailureStatus(receipt.outcome?.status)) {
+            firstFailingExecutor = executor;
+          }
+        }
+
+        const txConversionFailed = isFailureStatus(
+          txStatus.result?.transaction_outcome?.outcome?.status,
+        );
+
+        const anyFailure = firstFailingExecutor !== null || txConversionFailed;
+
+        if (reachedMpc) {
+          mpcAttemptedTransactions += 1;
+        }
+
+        if (!anyFailure) {
+          successfulTransactions += 1;
+          if (candidate.blockHeight > lastSuccessBlockHeight) {
+            lastSuccessBlockHeight = candidate.blockHeight;
+            lastSuccessTxHash = candidate.hash;
+            lastSuccessTimestamp = candidate.blockTimestamp;
+          }
+          return;
+        }
+
+        failedTransactions += 1;
+        if (firstFailingExecutor && mpcContractSet.has(firstFailingExecutor)) {
+          mpcFailedTransactions += 1;
+        } else if (
+          firstFailingExecutor &&
+          fastAuthContractSet.has(firstFailingExecutor)
+        ) {
+          guardFailedTransactions += 1;
+        } else if (!reachedMpc) {
+          // Failure happened before we reached MPC — attribute to guard.
+          guardFailedTransactions += 1;
+        }
+        // else: reached MPC but failure was elsewhere (callback, etc.) —
+        // counted in failedTransactions only, neither bucket.
+      },
+    );
 
     await prisma.$transaction([
       prisma.fastAuthChainHealthSnapshot.create({
@@ -247,6 +375,9 @@ export async function collectFastAuthChainHealth(
           totalTransactions,
           successfulTransactions,
           failedTransactions,
+          guardFailedTransactions,
+          mpcAttemptedTransactions,
+          mpcFailedTransactions,
           distinctRelayers: distinctRelayers.size,
           lastSuccessTimestamp,
           lastSuccessTxHash,
@@ -263,6 +394,13 @@ export async function collectFastAuthChainHealth(
       totalTransactions > 0
         ? Math.round((successfulTransactions / totalTransactions) * 1000) / 10
         : null;
+    const mpcSuccessRatePct =
+      mpcAttemptedTransactions > 0
+        ? Math.round(
+            ((mpcAttemptedTransactions - mpcFailedTransactions) / mpcAttemptedTransactions) *
+              1000,
+          ) / 10
+        : null;
 
     return {
       source: "fastauth_chain_health",
@@ -273,6 +411,9 @@ export async function collectFastAuthChainHealth(
         `found ${totalTransactions} FastAuth tx ` +
         `(${successfulTransactions} ok, ${failedTransactions} failed` +
         `${successRatePct !== null ? `, ${successRatePct}%` : ""}); ` +
+        `MPC ${mpcAttemptedTransactions} attempts, ${mpcFailedTransactions} failed` +
+        `${mpcSuccessRatePct !== null ? `, ${mpcSuccessRatePct}%` : ""}; ` +
+        `guard-side failures ${guardFailedTransactions}; ` +
         `${distinctRelayers.size} distinct relayers.`,
     };
   } catch (error) {

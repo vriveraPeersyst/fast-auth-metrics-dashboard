@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "FastAuth Metrics Dashboard",
   description: "Private peersyst.org FastAuth analytics dashboard",
+  icons: {
+    icon: "/near-logo.ico",
+    shortcut: "/near-logo.ico",
+  },
 };
 
 const fontVariables = {

@@ -8,6 +8,7 @@ import {
   NearRpcExhaustedError,
   type NearRpcManager,
 } from "@/lib/indexers/near-rpc-manager";
+import { decodeSignActionType } from "@/lib/indexers/decode-sign-action";
 import type { IndexerRunResult } from "@/lib/indexers/types";
 
 // Hardcoded indexer tuning. Historical defaults from env (.env knobs) have
@@ -421,43 +422,56 @@ function extractSponsoredAccount(signPayload: Record<string, unknown> | null): s
   return null;
 }
 
-function resolveProviderType(guardId: string | null): { providerType: string; guardName: string | null } {
+export function resolveProviderType(
+  guardId: string | null,
+): { providerType: string; guardName: string | null } {
   if (!guardId || !guardId.trim()) {
-    return {
-      providerType: "unknown",
-      guardName: null,
-    };
+    return { providerType: "unknown", guardName: null };
   }
 
   const normalizedGuardId = guardId.trim().toLowerCase();
   const parts = normalizedGuardId.split("#");
   const guardName = parts.length > 1 ? parts[1] : parts[0];
 
+  // Literal-name conventions take precedence over URL parsing — a guard
+  // explicitly registered as "auth0" / "firebase" / "custom-issuer" is
+  // unambiguous regardless of any underlying issuer URL.
   if (guardName.includes("auth0")) {
-    return {
-      providerType: "auth0",
-      guardName,
-    };
+    return { providerType: "auth0", guardName };
   }
-
   if (guardName.includes("firebase")) {
-    return {
-      providerType: "firebase",
-      guardName,
-    };
+    return { providerType: "firebase", guardName };
   }
-
   if (guardName.includes("custom") || guardName.includes("issuer")) {
-    return {
-      providerType: "custom_issuer",
-      guardName,
-    };
+    return { providerType: "custom_issuer", guardName };
   }
 
-  return {
-    providerType: "unknown",
-    guardName,
-  };
+  // URL-form guard names: try to detect known IdP hosts before defaulting
+  // to custom_issuer. Reason: docs convention isn't mandatory — operators
+  // can register a Firebase- or Auth0-backed guard under its issuer URL
+  // (e.g. "jwt#https://securetoken.google.com/<project>"), and we want
+  // those classified correctly.
+  if (guardName.startsWith("http://") || guardName.startsWith("https://")) {
+    let host: string | null = null;
+    try {
+      host = new URL(guardName).hostname.toLowerCase();
+    } catch {
+      // Malformed URL — fall through to generic URL handling.
+    }
+
+    if (host) {
+      if (host === "auth0.com" || host.endsWith(".auth0.com")) {
+        return { providerType: "auth0", guardName };
+      }
+      if (host === "securetoken.google.com") {
+        return { providerType: "firebase", guardName };
+      }
+    }
+
+    return { providerType: "custom_issuer", guardName };
+  }
+
+  return { providerType: "unknown", guardName };
 }
 
 function toMpcDomainId(algorithm: string | null): number | null {
@@ -543,6 +557,9 @@ export function deriveFastAuthSignEventsFromTransaction(params: {
     const signPayloadCandidate =
       argsPayload?.sign_payload ?? argsPayload?.signPayload ?? null;
     const { payloadObject, payloadJson } = parseSignPayload(signPayloadCandidate);
+    const signActionType = decodeSignActionType(
+      Array.isArray(signPayloadCandidate) ? (signPayloadCandidate as number[]) : null,
+    );
     const userSub = parseJwtSub(verifyPayload);
     const userKeyPath =
       guardId && userSub
@@ -580,6 +597,7 @@ export function deriveFastAuthSignEventsFromTransaction(params: {
       userKeyPath,
       userDomainId,
       userDerivedPublicKey: null,
+      signActionType,
       projectDappId,
       sponsoredAccountId,
       sponsoredAccountHash,

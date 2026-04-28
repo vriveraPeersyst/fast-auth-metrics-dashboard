@@ -578,6 +578,44 @@ export async function collectFastAuthPublicKeyAccounts(
         existingAccountSet.has(accountId),
       );
 
+      // Resolve each candidate pubkey to its current "owner" account
+      // (most-recently-seen wins) so we can stamp user_account_id on the
+      // sign events themselves. This makes downstream queries that need
+      // "which user signed this tx" a single-table read.
+      const ownerByPublicKey = new Map<string, { accountId: string; lastSeenAt: Date }>();
+      for (const pair of candidatePairs) {
+        const current = ownerByPublicKey.get(pair.publicKey);
+        if (!current || pair.meta.blockTimestamp > current.lastSeenAt) {
+          ownerByPublicKey.set(pair.publicKey, {
+            accountId: pair.accountId,
+            lastSeenAt: pair.meta.blockTimestamp,
+          });
+        }
+      }
+
+      // Group sign-event ids by resolved accountId so we can do one
+      // updateMany per group rather than one update per event.
+      const eventIdsByAccount = new Map<string, bigint[]>();
+      for (const event of events) {
+        if (!event.userDerivedPublicKey) continue;
+        const owner = ownerByPublicKey.get(event.userDerivedPublicKey);
+        if (!owner) continue;
+        const list = eventIdsByAccount.get(owner.accountId) ?? [];
+        list.push(event.id);
+        eventIdsByAccount.set(owner.accountId, list);
+      }
+
+      await runWithConcurrency(
+        [...eventIdsByAccount.entries()],
+        resolvePositiveIntEnv("FASTAUTH_DB_CONCURRENCY", 8),
+        async ([accountId, ids]) => {
+          await prisma.fastAuthSignEvent.updateMany({
+            where: { id: { in: ids } },
+            data: { userAccountId: accountId },
+          });
+        },
+      );
+
       await runWithConcurrency(
         existingAccountUpdates,
         resolvePositiveIntEnv("FASTAUTH_DB_CONCURRENCY", 8),
