@@ -5,6 +5,11 @@ import { TopAccountsTable } from "@/components/top-accounts-table";
 import { UptimeBar } from "@/components/uptime-bar";
 import { getDashboardData } from "@/lib/dashboard-data";
 
+// The dashboard reads from a database that the worker is constantly writing to.
+// Static prerendering would freeze the page to deploy-time data, so we force a
+// fresh server render on every request.
+export const dynamic = "force-dynamic";
+
 function formatAgeMinutes(ageMinutes: number | null): string {
   if (ageMinutes === null) {
     return "-";
