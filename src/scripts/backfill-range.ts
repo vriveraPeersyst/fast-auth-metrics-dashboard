@@ -218,7 +218,7 @@ async function processBlock(
       const gasBurnt = toNullableBigInt(outcome?.gas_burnt);
       const { executionStatus, failureReason } = parseExecutionStatus(outcome?.status);
       const relayerPublicKey = normalizeNearPublicKey(tx.public_key);
-      const derivedSignEvents = deriveFastAuthSignEventsFromTransaction({
+      const { seeds: derivedSignEvents } = deriveFastAuthSignEventsFromTransaction({
         tx,
         blockHeight,
         blockTimestamp,

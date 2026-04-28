@@ -2,6 +2,7 @@ import { FastAuthLogo } from "@/components/fastauth-logo";
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
 import { ConsumerOutcomesPanel } from "@/components/consumer-outcomes-panel";
+import { RealActivityPanel } from "@/components/real-activity-panel";
 import { TopAccountsTable } from "@/components/top-accounts-table";
 import { TransactionsPanel } from "@/components/transactions-panel";
 import { UptimeBar } from "@/components/uptime-bar";
@@ -397,15 +398,29 @@ export default async function Home() {
       <section className="logsPanel">
         <div className="panelTitleRow">
           <h2>Consumer transactions</h2>
-          <p>Relayer-submitted txs that consume FastAuth signatures (AddKey, Transfer, FunctionCall, …). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>. Use the tabs to slice by relayer, provider, guard, or action type.</p>
+          <p>Relayer-submitted txs whose Delegate was signed by FastAuth&rsquo;s MPC. In practice this is mostly <code>AddKey</code> / <code>DeleteKey</code> — the wallet uses FastAuth only to install or rotate access keys, then signs ordinary user activity (<code>ft_transfer</code>, <code>claim</code>, &hellip;) locally with the installed key (those don&rsquo;t appear here — see &ldquo;Real activity&rdquo; below). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>.</p>
         </div>
         <ConsumerOutcomesPanel data={data.consumerOutcomes} />
       </section>
 
       <section className="logsPanel">
         <div className="panelTitleRow">
-          <h2>Top accounts</h2>
-          <p>Most active NEAR accounts ranked by sign event count. Pick a window to re-rank. First/last seen reflect FastAuth activity, not on-chain account age. Note: counts include AddKey-type signs (setup churn) — see the Activity by action type panel above for the breakdown.</p>
+          <h2>Real activity</h2>
+          <p>
+            On-chain activity by FastAuth users — every tx whose signer is an account holding the
+            FastAuth-derived MPC key (<code>K_FA</code>). Captures everything the user actually
+            does (ft_transfer, claim, contract calls, &hellip;), regardless of which session key
+            signed it. Anchored on the account, not the key, so user attribution stays stable
+            across logout / reinstall cycles where the wallet rotates session keys.
+          </p>
+        </div>
+        <RealActivityPanel data={data.realActivity} />
+      </section>
+
+      <section className="logsPanel">
+        <div className="panelTitleRow">
+          <h2>Top accounts signing with <code>fast-auth.near</code></h2>
+          <p>NEAR accounts ranked by how many <code>FastAuth.sign()</code> calls have been made for keys they hold. Pick a window to re-rank. These are accounts whose FastAuth-derived key (<code>K_FA</code>) we&rsquo;ve seen routed through MPC — driven by AddKey/DeleteKey churn (login/logout cycles), not user product activity. For real on-chain user activity see the Real activity panel above. First/last seen reflect FastAuth activity, not on-chain account age.</p>
         </div>
         <TopAccountsTable rows={data.topAccounts} />
       </section>

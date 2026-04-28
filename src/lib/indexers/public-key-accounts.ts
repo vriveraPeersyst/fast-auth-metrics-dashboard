@@ -13,6 +13,10 @@ const DEFAULT_LOOKUP_URL_TEMPLATES = [
   "https://api.fastnear.com/v1/public_key/{publicKey}/all",
 ];
 
+const DEFAULT_NEARBLOCKS_URL_TEMPLATES = [
+  "https://api.nearblocks.io/v1/kitwallet/publicKey/{publicKey}/accounts",
+];
+
 async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
@@ -88,6 +92,13 @@ function resolveLookupUrlTemplates(): string[] {
   const unique = [...new Set(configured)];
 
   return unique.length > 0 ? unique : DEFAULT_LOOKUP_URL_TEMPLATES;
+}
+
+function resolveNearBlocksUrlTemplates(): string[] {
+  const plural = process.env.FASTAUTH_PUBLIC_KEY_ACCOUNTS_NEARBLOCKS_TEMPLATES;
+  const configured = parseHttpPoolTemplates(hasConfiguredValue(plural) ? plural : null);
+  const unique = [...new Set(configured)];
+  return unique.length > 0 ? unique : DEFAULT_NEARBLOCKS_URL_TEMPLATES;
 }
 
 function resolveMpcContractId(predecessorId: string): string {
@@ -199,18 +210,44 @@ function extractAccountsFromPayload(payload: unknown): string[] {
   return [];
 }
 
-async function fetchAccountsForPublicKey(
+async function fetchAccountsFromPool(
   pool: HttpEndpointPool,
   publicKey: string,
+  sourceLabel: string,
 ): Promise<string[]> {
-  const payload = await pool.get<unknown>(
-    publicKey,
-    `public-key account lookup for ${publicKey}`,
-  );
+  try {
+    const payload = await pool.get<unknown>(
+      publicKey,
+      `${sourceLabel} account lookup for ${publicKey}`,
+    );
+    return extractAccountsFromPayload(payload)
+      .map((accountId) => accountId.trim().toLowerCase())
+      .filter((accountId) => isLikelyNearAccountId(accountId));
+  } catch {
+    // If one source is down (rate-limit storm, transient outage), we still
+    // want results from the other. Empty array signals "this source had
+    // nothing to contribute"; the union will fall back to the other pool.
+    return [];
+  }
+}
 
-  return extractAccountsFromPayload(payload)
-    .map((accountId) => accountId.trim().toLowerCase())
-    .filter((accountId) => isLikelyNearAccountId(accountId));
+async function fetchAccountsForPublicKey(
+  fastNearPool: HttpEndpointPool,
+  nearBlocksPool: HttpEndpointPool,
+  publicKey: string,
+): Promise<string[]> {
+  // Query both sources in parallel, mirror near-mobile's
+  // aggregated-near.indexer.ts pattern: union + dedupe. Both indexers
+  // typically agree, but each occasionally returns a different result
+  // (FastNEAR may lag indexing; NearBlocks may have its own caching) so
+  // taking the union catches edge-case multi-account keys and protects
+  // against any single source's outage.
+  const [fastNear, nearBlocks] = await Promise.all([
+    fetchAccountsFromPool(fastNearPool, publicKey, "fastnear"),
+    fetchAccountsFromPool(nearBlocksPool, publicKey, "nearblocks"),
+  ]);
+
+  return [...new Set([...fastNear, ...nearBlocks])];
 }
 
 async function fetchDerivedPublicKey(params: {
@@ -275,9 +312,14 @@ export async function collectFastAuthPublicKeyAccounts(
   prisma: PrismaClient,
 ): Promise<IndexerRunResult> {
   const lookupTemplates = resolveLookupUrlTemplates();
-  const lookupPool = new HttpEndpointPool(lookupTemplates, {
+  const fastNearPool = new HttpEndpointPool(lookupTemplates, {
     placeholder: "publicKey",
     bearerToken: process.env.FASTNEAR_API_KEY ?? null,
+  });
+  const nearBlocksTemplates = resolveNearBlocksUrlTemplates();
+  const nearBlocksPool = new HttpEndpointPool(nearBlocksTemplates, {
+    placeholder: "publicKey",
+    bearerToken: process.env.NEARBLOCKS_API_KEY ?? null,
   });
   const rpcManager = createNearRpcManager();
 
@@ -427,7 +469,11 @@ export async function collectFastAuthPublicKeyAccounts(
       publicKeys,
       resolvePositiveIntEnv("FASTAUTH_PUBLIC_KEY_LOOKUP_CONCURRENCY", DEFAULT_LOOKUP_CONCURRENCY),
       async ([publicKey, meta]) => {
-        const accounts = await fetchAccountsForPublicKey(lookupPool, publicKey);
+        const accounts = await fetchAccountsForPublicKey(
+          fastNearPool,
+          nearBlocksPool,
+          publicKey,
+        );
         lookupRows.push({ publicKey, meta, accounts });
       },
     );

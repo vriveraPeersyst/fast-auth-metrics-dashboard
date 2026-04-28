@@ -130,6 +130,52 @@ model FastAuthConsumerTransaction {
   @@map("fastauth_consumer_transactions")
 }
 
+// Real on-chain activity by FastAuth users. Captures any tx whose
+// signer_account_id is registered in fastauth_public_key_accounts — i.e.
+// accounts holding the FastAuth-derived MPC key (K_FA). Activity is
+// anchored on the account, not on individual session keys: when a Sweat
+// user logs out and a new K_session is installed, the same account
+// continues signing, so usage attribution remains stable across
+// session-key rotations.
+model FastAuthUserTransaction {
+  txHash            String   @id @map("tx_hash")
+  blockHeight       BigInt   @map("block_height")
+  blockTimestamp    DateTime @map("block_timestamp")
+  signerAccountId   String   @map("signer_account_id")
+  signerPublicKey   String?  @map("signer_public_key")
+  receiverId        String   @map("receiver_id")
+  methodName        String?  @map("method_name")
+  actionTypes       String[] @map("action_types")
+  // True if this row was extracted from a Delegate-wrapped meta-tx
+  // (signer = relayer; sender_id of inner Delegate = a known FastAuth user).
+  // False for direct user txs.
+  metaWrapped       Boolean  @default(false) @map("meta_wrapped")
+  // Total USD value moved by this tx, computed at index-time using prices
+  // from 1click.chaindefuser.com. Null when none of the actions involve a
+  // priced token (e.g. pure FunctionCalls with no token transfer).
+  valueUsd          Decimal? @db.Decimal(20, 4) @map("value_usd")
+  // Per-token breakdown — parallel arrays, all the same length per row.
+  // Set up so a future "Top tokens" panel can UNNEST and GROUP BY symbol
+  // for ranking. Empty arrays when valueUsd is null. Native NEAR shows
+  // up here as symbol "NEAR" / decimals 24.
+  tokenSymbols      String[]   @map("token_symbols")
+  tokenAmounts      String[]   @map("token_amounts")     // raw u128 strings
+  tokenDecimals     Int[]      @map("token_decimals")
+  tokenValuesUsd    Decimal[]  @db.Decimal(20, 8) @map("token_values_usd")
+  executionStatus   String?  @map("execution_status")
+  failureReason     String?  @map("failure_reason")
+  gasBurnt          BigInt?  @map("gas_burnt")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([blockTimestamp])
+  @@index([signerAccountId, blockTimestamp])
+  @@index([receiverId, blockTimestamp])
+  @@index([methodName, blockTimestamp])
+  @@index([executionStatus, blockTimestamp])
+  @@index([valueUsd])
+  @@map("fastauth_user_transactions")
+}
+
 model FastAuthPublicKeyAccount {
   id              BigInt   @id @default(autoincrement())
   publicKey       String   @map("public_key")

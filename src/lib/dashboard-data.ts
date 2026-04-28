@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 type CollectorHealthStatus = "healthy" | "lagging" | "stale" | "no_data";
@@ -239,6 +241,66 @@ type ConsumerOutcomes = {
   } | null;
 };
 
+type RealActivityWindow = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  successRatePct: number | null;
+  distinctUsers: number;
+  volumeUsd: number;
+};
+
+type RealActivityGroupRow = {
+  key: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+  volumeUsdAll: number;
+};
+
+// (classification × secondary key) row, e.g. (relayer, receiver) or (provider, method).
+type RealActivityCrossRow = {
+  classKey: string;
+  innerKey: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+  volumeUsdAll: number;
+};
+
+type RealActivityNested = {
+  // Top-level: one row per classification value (e.g. one row per relayer).
+  overall: RealActivityGroupRow[];
+  // Cross-classified: one row per (classification value, secondary key).
+  byReceiver: RealActivityCrossRow[];
+  byMethod: RealActivityCrossRow[];
+};
+
+type RealActivity = {
+  byWindow: {
+    last24h: RealActivityWindow;
+    last7d: RealActivityWindow;
+    last30d: RealActivityWindow;
+    all: RealActivityWindow;
+  };
+  byReceiver: RealActivityGroupRow[];
+  byMethod: RealActivityGroupRow[];
+  // Account-attributed classifications: each account's user txs are
+  // bucketed by its most-recent sign event's relayer / provider / guard.
+  // Each classification has its own Overall / by-receiver / by-method
+  // breakdown so we can answer "for this provider, which dApps are
+  // dominant?" or "for this relayer, what method names dominate?".
+  byRelayer: RealActivityNested;
+  byProvider: RealActivityNested;
+  byGuard: RealActivityNested;
+  trackingStartedAt: {
+    blockHeight: string;
+    blockTimestamp: Date;
+  } | null;
+};
+
 type TopAccountRow = {
   accountId: string;
   signEventsAll: number;
@@ -257,6 +319,7 @@ type DashboardData = {
   guardBreakdown: GuardBreakdownItem[];
   actionTypeBreakdown: ActionTypeBreakdownItem[];
   consumerOutcomes: ConsumerOutcomes;
+  realActivity: RealActivity;
   topAccounts: TopAccountRow[];
   latestNearFinalBlock: string | null;
   indexerLag: IndexerLag;
@@ -924,6 +987,309 @@ async function loadConsumerOutcomes(
   };
 }
 
+async function loadRealActivity(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+): Promise<RealActivity> {
+  // Per-window totals + success/fail + distinct users (signer accounts).
+  const [windowsRow] = await prisma.$queryRaw<
+    Array<{
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+      users_all: bigint;
+      users_30d: bigint;
+      users_7d: bigint;
+      users_24h: bigint;
+      vol_all: string | null;
+      vol_30d: string | null;
+      vol_7d: string | null;
+      vol_24h: string | null;
+    }>
+  >`
+    SELECT
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h,
+      COUNT(DISTINCT signer_account_id) AS users_all,
+      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last30d}) AS users_30d,
+      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last7d}) AS users_7d,
+      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last24h}) AS users_24h,
+      COALESCE(SUM(value_usd), 0)::text AS vol_all,
+      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last30d}), 0)::text AS vol_30d,
+      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last7d}), 0)::text AS vol_7d,
+      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last24h}), 0)::text AS vol_24h
+    FROM fastauth_user_transactions
+  `;
+
+  const receiverRows = await prisma.$queryRaw<
+    Array<{
+      receiver: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      vol_all: string | null;
+    }>
+  >`
+    SELECT
+      receiver_id AS receiver,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COALESCE(SUM(value_usd), 0)::text AS vol_all
+    FROM fastauth_user_transactions
+    GROUP BY receiver_id
+    ORDER BY total_all DESC
+    LIMIT 20
+  `;
+
+  const methodRows = await prisma.$queryRaw<
+    Array<{
+      method: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      vol_all: string | null;
+    }>
+  >`
+    SELECT
+      method_name AS method,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COALESCE(SUM(value_usd), 0)::text AS vol_all
+    FROM fastauth_user_transactions
+    GROUP BY method_name
+    ORDER BY total_all DESC
+    LIMIT 20
+  `;
+
+  // Account → classification, picking the account's most-recent sign event.
+  // Reused below for all three account-attributed groupings (relayer /
+  // provider / guard) so each user_tx row maps to one classification.
+  const accountClassificationCte = Prisma.sql`
+    WITH account_class AS (
+      SELECT DISTINCT ON (user_account_id)
+        user_account_id,
+        relayer_account_id,
+        provider_type,
+        guard_name
+      FROM fastauth_sign_events
+      WHERE user_account_id IS NOT NULL
+      ORDER BY user_account_id, block_timestamp DESC
+    )
+  `;
+
+  const buildClassGroupQuery = (
+    classCol: "relayer_account_id" | "provider_type" | "guard_name",
+  ) => Prisma.sql`
+    ${accountClassificationCte}
+    SELECT
+      COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)') AS key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last24h}) AS total_24h,
+      COALESCE(SUM(t.value_usd), 0)::text AS vol_all
+    FROM fastauth_user_transactions t
+    LEFT JOIN account_class ac ON ac.user_account_id = t.signer_account_id
+    GROUP BY COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)')
+    ORDER BY total_all DESC
+  `;
+
+  type ClassGroupRow = {
+    key: string | null;
+    total_all: bigint;
+    total_30d: bigint;
+    total_7d: bigint;
+    total_24h: bigint;
+    vol_all: string | null;
+  };
+
+  // Cross-classification query: groups user txs by (classification, inner)
+  // pair, where classification is the account's relayer/provider/guard
+  // and inner is the user tx's receiver_id or method_name.
+  const buildCrossQuery = (
+    classCol: "relayer_account_id" | "provider_type" | "guard_name",
+    innerCol: "receiver_id" | "method_name",
+  ) => Prisma.sql`
+    ${accountClassificationCte}
+    SELECT
+      COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)') AS class_key,
+      COALESCE(t.${Prisma.raw(innerCol)}, '(none)') AS inner_key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last24h}) AS total_24h,
+      COALESCE(SUM(t.value_usd), 0)::text AS vol_all
+    FROM fastauth_user_transactions t
+    LEFT JOIN account_class ac ON ac.user_account_id = t.signer_account_id
+    GROUP BY
+      COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)'),
+      COALESCE(t.${Prisma.raw(innerCol)}, '(none)')
+    ORDER BY total_all DESC
+    LIMIT 200
+  `;
+
+  type CrossRow = {
+    class_key: string;
+    inner_key: string;
+    total_all: bigint;
+    total_30d: bigint;
+    total_7d: bigint;
+    total_24h: bigint;
+    vol_all: string | null;
+  };
+
+  const [
+    relayerClassRows,
+    providerClassRows,
+    guardClassRows,
+    relayerReceiverRows,
+    relayerMethodRows,
+    providerReceiverRows,
+    providerMethodRows,
+    guardReceiverRows,
+    guardMethodRows,
+  ] = await Promise.all([
+    prisma.$queryRaw<ClassGroupRow[]>(buildClassGroupQuery("relayer_account_id")),
+    prisma.$queryRaw<ClassGroupRow[]>(buildClassGroupQuery("provider_type")),
+    prisma.$queryRaw<ClassGroupRow[]>(buildClassGroupQuery("guard_name")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("relayer_account_id", "receiver_id")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("relayer_account_id", "method_name")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("provider_type", "receiver_id")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("provider_type", "method_name")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("guard_name", "receiver_id")),
+    prisma.$queryRaw<CrossRow[]>(buildCrossQuery("guard_name", "method_name")),
+  ]);
+
+  const classGroupToRows = (rows: ClassGroupRow[]): RealActivityGroupRow[] =>
+    rows.map((r) => ({
+      key: r.key ?? "(unclassified)",
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+      volumeUsdAll: r.vol_all ? Number(r.vol_all) : 0,
+    }));
+
+  const crossToRows = (rows: CrossRow[]): RealActivityCrossRow[] =>
+    rows.map((r) => ({
+      classKey: r.class_key,
+      innerKey: r.inner_key,
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+      volumeUsdAll: r.vol_all ? Number(r.vol_all) : 0,
+    }));
+
+  const firstUserTx = await prisma.fastAuthUserTransaction.findFirst({
+    orderBy: { blockTimestamp: "asc" },
+    select: { blockHeight: true, blockTimestamp: true },
+  });
+
+  const buildWindow = (
+    total: bigint,
+    failed: bigint,
+    distinctUsers: bigint,
+    volumeUsd: string | null,
+  ): RealActivityWindow => {
+    const totalNum = Number(total);
+    const failedNum = Number(failed);
+    const succeeded = Math.max(0, totalNum - failedNum);
+    return {
+      total: totalNum,
+      succeeded,
+      failed: failedNum,
+      successRatePct: totalNum > 0 ? Math.round((succeeded / totalNum) * 1000) / 10 : null,
+      distinctUsers: Number(distinctUsers),
+      volumeUsd: volumeUsd ? Number(volumeUsd) : 0,
+    };
+  };
+
+  return {
+    byWindow: {
+      last24h: buildWindow(
+        windowsRow?.total_24h ?? BigInt(0),
+        windowsRow?.failed_24h ?? BigInt(0),
+        windowsRow?.users_24h ?? BigInt(0),
+        windowsRow?.vol_24h ?? null,
+      ),
+      last7d: buildWindow(
+        windowsRow?.total_7d ?? BigInt(0),
+        windowsRow?.failed_7d ?? BigInt(0),
+        windowsRow?.users_7d ?? BigInt(0),
+        windowsRow?.vol_7d ?? null,
+      ),
+      last30d: buildWindow(
+        windowsRow?.total_30d ?? BigInt(0),
+        windowsRow?.failed_30d ?? BigInt(0),
+        windowsRow?.users_30d ?? BigInt(0),
+        windowsRow?.vol_30d ?? null,
+      ),
+      all: buildWindow(
+        windowsRow?.total_all ?? BigInt(0),
+        windowsRow?.failed_all ?? BigInt(0),
+        windowsRow?.users_all ?? BigInt(0),
+        windowsRow?.vol_all ?? null,
+      ),
+    },
+    byReceiver: receiverRows.map((r) => ({
+      key: r.receiver ?? "(unknown)",
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+      volumeUsdAll: r.vol_all ? Number(r.vol_all) : 0,
+    })),
+    byMethod: methodRows.map((r) => ({
+      key: r.method ?? "(no method)",
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+      volumeUsdAll: r.vol_all ? Number(r.vol_all) : 0,
+    })),
+    byRelayer: {
+      overall: classGroupToRows(relayerClassRows),
+      byReceiver: crossToRows(relayerReceiverRows),
+      byMethod: crossToRows(relayerMethodRows),
+    },
+    byProvider: {
+      overall: classGroupToRows(providerClassRows),
+      byReceiver: crossToRows(providerReceiverRows),
+      byMethod: crossToRows(providerMethodRows),
+    },
+    byGuard: {
+      overall: classGroupToRows(guardClassRows),
+      byReceiver: crossToRows(guardReceiverRows),
+      byMethod: crossToRows(guardMethodRows),
+    },
+    trackingStartedAt: firstUserTx
+      ? {
+          blockHeight: firstUserTx.blockHeight.toString(),
+          blockTimestamp: firstUserTx.blockTimestamp,
+        }
+      : null,
+  };
+}
+
 async function loadTopAccounts(
   last24h: Date,
   last7d: Date,
@@ -1104,6 +1470,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const topAccountsPromise = loadTopAccounts(last24h, last7d, last30d, MAX_TOP_ACCOUNTS);
   const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
   const consumerOutcomesPromise = loadConsumerOutcomes(last24h, last7d, last30d);
+  const realActivityPromise = loadRealActivity(last24h, last7d, last30d);
 
   const [
     accountsTotal,
@@ -1558,6 +1925,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const topAccounts = await topAccountsPromise;
   const actionTypeBreakdown = await actionTypeBreakdownPromise;
   const consumerOutcomes = await consumerOutcomesPromise;
+  const realActivity = await realActivityPromise;
 
   return {
     accountsOverview,
@@ -1567,6 +1935,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     guardBreakdown,
     actionTypeBreakdown,
     consumerOutcomes,
+    realActivity,
     topAccounts,
     latestNearFinalBlock: nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null,
     indexerLag,

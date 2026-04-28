@@ -8,7 +8,12 @@ import {
   NearRpcExhaustedError,
   type NearRpcManager,
 } from "@/lib/indexers/near-rpc-manager";
-import { decodeSignActionType } from "@/lib/indexers/decode-sign-action";
+import { computeActionsValue, type ComputedTxValue } from "@/lib/indexers/compute-tx-value";
+import {
+  decodeSignActionType,
+  decodeSignDelegatePublicKey,
+} from "@/lib/indexers/decode-sign-action";
+import { refreshTokenRegistry, type TokenRegistry } from "@/lib/indexers/token-prices";
 import type { IndexerRunResult } from "@/lib/indexers/types";
 
 // Hardcoded indexer tuning. Historical defaults from env (.env knobs) have
@@ -175,11 +180,50 @@ export async function fetchChunkByHash(
   );
 }
 
+/**
+ * Project a ComputedTxValue (totalUsd + per-token entries) into the column
+ * shape FastAuthUserTransactionCreateManyInput expects: a scalar value_usd
+ * plus four parallel arrays (symbols, raw amounts, decimals, per-token
+ * USD values). Empty arrays when no token movement was priced.
+ */
+function buildTokenColumns(computed: ComputedTxValue): {
+  valueUsd: Prisma.Decimal | null;
+  tokenSymbols: string[];
+  tokenAmounts: string[];
+  tokenDecimals: number[];
+  tokenValuesUsd: Prisma.Decimal[];
+} {
+  if (computed.totalUsd === null) {
+    return {
+      valueUsd: null,
+      tokenSymbols: [],
+      tokenAmounts: [],
+      tokenDecimals: [],
+      tokenValuesUsd: [],
+    };
+  }
+  return {
+    valueUsd: new Prisma.Decimal(computed.totalUsd),
+    tokenSymbols: computed.tokens.map((t) => t.symbol),
+    tokenAmounts: computed.tokens.map((t) => t.rawAmount),
+    tokenDecimals: computed.tokens.map((t) => t.decimals),
+    tokenValuesUsd: computed.tokens.map((t) => new Prisma.Decimal(t.valueUsd)),
+  };
+}
+
 type DelegateActionInfo = {
   innerSignerId: string;
   innerReceiverId: string;
   innerPublicKey: string;
   innerActionTypes: string[];
+  // Inner method name from the FIRST FunctionCall inside the Delegate.
+  // Most user activity is single-FunctionCall (ft_transfer / claim / etc),
+  // so first-method is a good proxy for "what did this Delegate do".
+  innerMethodName: string | null;
+  // Raw parsed inner actions for downstream value extraction (deposits,
+  // ft_transfer args). Stored as the chunk-RPC-shaped objects we already
+  // received — caller can iterate them to pull deposits / args / etc.
+  innerActions: unknown[];
 };
 
 // Pulls the inner DelegateAction out of a NEP-366 meta-transaction so we can
@@ -208,16 +252,26 @@ export function extractDelegateActionInfo(
       continue;
     }
     const innerActionTypes: string[] = [];
+    let innerMethodName: string | null = null;
     for (const inner of innerActions) {
       if (!inner || typeof inner !== "object") continue;
       const [name] = Object.keys(inner);
       if (name) innerActionTypes.push(name);
+      if (innerMethodName === null && name === "FunctionCall") {
+        const fc = (inner as Record<string, unknown>).FunctionCall;
+        if (fc && typeof fc === "object") {
+          const m = (fc as Record<string, unknown>).method_name;
+          if (typeof m === "string") innerMethodName = m;
+        }
+      }
     }
     return {
       innerSignerId: sender.trim(),
       innerReceiverId: receiver.trim(),
       innerPublicKey: pk.trim(),
       innerActionTypes,
+      innerMethodName,
+      innerActions,
     };
   }
   return null;
@@ -559,17 +613,18 @@ export function deriveFastAuthSignEventsFromTransaction(params: {
   gasBurnt: bigint | null;
   relayerPublicKey: string | null;
   fastAuthContractSet: Set<string>;
-}): FastAuthSignEventSeed[] {
+}): { seeds: FastAuthSignEventSeed[]; inlinePublicKeys: string[] } {
   const actions = Array.isArray(params.tx.actions) ? params.tx.actions : [];
   const receiverId = params.tx.receiver_id?.trim().toLowerCase() ?? null;
   const relayerAccountId = params.tx.signer_id?.trim().toLowerCase() ?? null;
   const txHash = params.tx.hash;
 
   if (!receiverId || !relayerAccountId || !txHash || !params.fastAuthContractSet.has(receiverId)) {
-    return [];
+    return { seeds: [], inlinePublicKeys: [] };
   }
 
   const derivedEvents: FastAuthSignEventSeed[] = [];
+  const inlinePublicKeys: string[] = [];
 
   for (let actionIndex = 0; actionIndex < actions.length; actionIndex += 1) {
     const action = actions[actionIndex];
@@ -605,9 +660,14 @@ export function deriveFastAuthSignEventsFromTransaction(params: {
     const signPayloadCandidate =
       argsPayload?.sign_payload ?? argsPayload?.signPayload ?? null;
     const { payloadObject, payloadJson } = parseSignPayload(signPayloadCandidate);
-    const signActionType = decodeSignActionType(
-      Array.isArray(signPayloadCandidate) ? (signPayloadCandidate as number[]) : null,
-    );
+    const signPayloadBytes = Array.isArray(signPayloadCandidate)
+      ? (signPayloadCandidate as number[])
+      : null;
+    const signActionType = decodeSignActionType(signPayloadBytes);
+    const inlinePublicKey = decodeSignDelegatePublicKey(signPayloadBytes);
+    if (inlinePublicKey) {
+      inlinePublicKeys.push(inlinePublicKey);
+    }
     const userSub = parseJwtSub(verifyPayload);
     const userKeyPath =
       guardId && userSub
@@ -658,7 +718,7 @@ export function deriveFastAuthSignEventsFromTransaction(params: {
     });
   }
 
-  return derivedEvents;
+  return { seeds: derivedEvents, inlinePublicKeys };
 }
 
 export async function rebuildRelayerMarts(prisma: PrismaClient): Promise<{ relayers: number }> {
@@ -828,26 +888,28 @@ export async function persistNearBlock(
   transactions: Prisma.NearTransactionCreateManyInput[],
   signEvents: FastAuthSignEventSeed[],
   consumerTransactions: Prisma.FastAuthConsumerTransactionCreateManyInput[] = [],
+  userTransactions: Prisma.FastAuthUserTransactionCreateManyInput[] = [],
 ): Promise<{
   insertedTransactions: number;
   insertedSignEvents: number;
   insertedConsumerTransactions: number;
+  insertedUserTransactions: number;
 }> {
-  // Fast path: most NEAR blocks contain no FastAuth-relevant transactions.
-  // Avoid opening a Prisma transaction (or even a single round-trip) when
-  // there is nothing to write.
   if (
     transactions.length === 0 &&
     signEvents.length === 0 &&
-    consumerTransactions.length === 0
+    consumerTransactions.length === 0 &&
+    userTransactions.length === 0
   ) {
-    return { insertedTransactions: 0, insertedSignEvents: 0, insertedConsumerTransactions: 0 };
+    return {
+      insertedTransactions: 0,
+      insertedSignEvents: 0,
+      insertedConsumerTransactions: 0,
+      insertedUserTransactions: 0,
+    };
   }
 
-  // All three createMany statements are independently row-atomic and
-  // skipDuplicates makes re-runs idempotent, so we don't need an interactive
-  // transaction wrapping them. Running them in parallel reduces DB round-trips.
-  const [txInsert, signInsert, consumerInsert] = await Promise.all([
+  const [txInsert, signInsert, consumerInsert, userInsert] = await Promise.all([
     transactions.length > 0
       ? prisma.nearTransaction.createMany({
           data: transactions,
@@ -866,12 +928,19 @@ export async function persistNearBlock(
           skipDuplicates: true,
         })
       : Promise.resolve({ count: 0 }),
+    userTransactions.length > 0
+      ? prisma.fastAuthUserTransaction.createMany({
+          data: userTransactions,
+          skipDuplicates: true,
+        })
+      : Promise.resolve({ count: 0 }),
   ]);
 
   return {
     insertedTransactions: txInsert.count,
     insertedSignEvents: signInsert.count,
     insertedConsumerTransactions: consumerInsert.count,
+    insertedUserTransactions: userInsert.count,
   };
 }
 
@@ -1004,11 +1073,44 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       // for this iteration and keep going.
     }
 
+    // Load every NEAR account that holds the FastAuth-derived MPC key
+    // (K_FA). Activity from these accounts — regardless of which session
+    // key signed any individual tx — is "real activity" by FastAuth users.
+    // Anchoring on the account (not the key) means we correctly track a
+    // user across logout/login cycles where Sweat installs new K_session
+    // keys but the account stays the same.
+    const fastAuthAccountSet = new Set<string>();
+    try {
+      const rows = await prisma.fastAuthPublicKeyAccount.findMany({
+        distinct: ["accountId"],
+        select: { accountId: true },
+      });
+      for (const row of rows) {
+        if (row.accountId) {
+          fastAuthAccountSet.add(row.accountId.trim().toLowerCase());
+        }
+      }
+    } catch {
+      // Best-effort: if the load fails we just skip user-activity
+      // detection for this iteration.
+    }
+
+    // Refresh token prices once per iteration so we can stamp value_usd
+    // on user txs as we index them. Failure here is non-fatal — falls
+    // back to the previous cache (or null on first-run failure).
+    let tokenRegistry: TokenRegistry | null = null;
+    try {
+      tokenRegistry = await refreshTokenRegistry();
+    } catch {
+      // already logged inside refreshTokenRegistry
+    }
+
     let processed = 0;
     let skippedHeights = 0;
     let indexedTransactions = 0;
     let indexedFastAuthSignEvents = 0;
     let indexedConsumerTransactions = 0;
+    let indexedUserTransactions = 0;
     let latestPersistedHash: string | null = null;
     let latestPersistedHeight = -1;
     // Tracks heights that finished (successfully or safely-skipped) so we can
@@ -1058,6 +1160,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
 
       const uniqueTransactions = new Map<string, Prisma.NearTransactionCreateManyInput>();
       const uniqueSignEvents = new Map<string, FastAuthSignEventSeed>();
+      const uniqueUserTxs = new Map<string, Prisma.FastAuthUserTransactionCreateManyInput>();
       const uniqueConsumerTxs = new Map<
         string,
         Prisma.FastAuthConsumerTransactionCreateManyInput
@@ -1082,20 +1185,22 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
           const { executionStatus, failureReason } = parseExecutionStatus(outcome?.status);
           const relayerPublicKey = normalizeNearPublicKey(tx.public_key);
           const normalizedReceiverId = tx.receiver_id?.trim().toLowerCase() ?? null;
+          const txSignerLower = tx.signer_id?.trim().toLowerCase() ?? null;
 
           // Path 1: txs to a FastAuth contract (sign() calls). Existing logic.
           if (normalizedReceiverId && fastAuthContractSet.has(normalizedReceiverId)) {
             const { methodName, attachedDepositYocto } = parseActionMetadata(tx.actions);
-            const derivedSignEvents = deriveFastAuthSignEventsFromTransaction({
-              tx,
-              blockHeight,
-              blockTimestamp,
-              executionStatus,
-              failureReason,
-              gasBurnt,
-              relayerPublicKey,
-              fastAuthContractSet,
-            });
+            const { seeds: derivedSignEvents, inlinePublicKeys } =
+              deriveFastAuthSignEventsFromTransaction({
+                tx,
+                blockHeight,
+                blockTimestamp,
+                executionStatus,
+                failureReason,
+                gasBurnt,
+                relayerPublicKey,
+                fastAuthContractSet,
+              });
 
             uniqueTransactions.set(txHash, {
               txHash,
@@ -1114,6 +1219,14 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
 
             for (const signEvent of derivedSignEvents) {
               uniqueSignEvents.set(`${signEvent.txHash}:${signEvent.actionIndex}`, signEvent);
+            }
+
+            // Grow the in-memory pubkey set inline so consumer txs landing
+            // in this same iteration (typically 1-5 blocks after the sign
+            // event) are matched immediately, without waiting for
+            // public-key-accounts.ts to populate userDerivedPublicKey.
+            for (const pk of inlinePublicKeys) {
+              fastAuthPubKeySet.add(pk);
             }
           }
 
@@ -1144,6 +1257,99 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
               }
             }
           }
+
+          // Path 3: user activity. Two ways the same FastAuth user shows
+          // up on chain:
+          //
+          //   (a) DIRECT: outer tx signed by the user's account. Rare in
+          //       Sweat's setup but possible (e.g. wallet sign-and-send
+          //       flows that don't go through the relayer).
+          //
+          //   (b) META-TX: outer tx signed by sweat-relayer.near with a
+          //       Delegate whose sender_id is the user's account. This
+          //       is how ~all Sweat product activity (ft_transfer, claim,
+          //       contract calls) flows. We surface the INNER receiver/
+          //       method here so the panel reads naturally.
+          //
+          // Skip txs already covered by Path 1 (sign() calls to FastAuth
+          // itself) to avoid double-counting between user-tx + sign-event
+          // tables.
+          const blockTs = toDateFromNearNs(blockTimestamp);
+          const skipBecausePath1 =
+            normalizedReceiverId !== null && fastAuthContractSet.has(normalizedReceiverId);
+
+          if (blockTs && !skipBecausePath1) {
+            // (a) Direct
+            if (txSignerLower && fastAuthAccountSet.has(txSignerLower)) {
+              const receiver = normalizedReceiverId ?? tx.receiver_id?.trim() ?? null;
+              if (receiver) {
+                const { methodName: m } = parseActionMetadata(tx.actions);
+                const actionTypes: string[] = [];
+                if (Array.isArray(tx.actions)) {
+                  for (const a of tx.actions) {
+                    if (!a || typeof a !== "object") continue;
+                    const [name] = Object.keys(a);
+                    if (name) actionTypes.push(name);
+                  }
+                }
+                const computed = computeActionsValue({
+                  actions: Array.isArray(tx.actions) ? tx.actions : [],
+                  receiverId: receiver,
+                  registry: tokenRegistry,
+                });
+                uniqueUserTxs.set(txHash, {
+                  txHash,
+                  blockHeight: BigInt(blockHeight),
+                  blockTimestamp: blockTs,
+                  signerAccountId: txSignerLower,
+                  signerPublicKey: relayerPublicKey,
+                  receiverId: receiver,
+                  methodName: m,
+                  actionTypes,
+                  metaWrapped: false,
+                  ...buildTokenColumns(computed),
+                  executionStatus,
+                  failureReason,
+                  gasBurnt,
+                });
+              }
+            } else {
+              // (b) Meta-tx. Look for a Delegate whose inner sender is a
+              // FastAuth account. We reuse extractDelegateActionInfo so
+              // we get inner action types + first method name + raw inner
+              // actions for value computation.
+              const delegateInfo = extractDelegateActionInfo(tx.actions);
+              const innerSender = delegateInfo?.innerSignerId?.toLowerCase() ?? null;
+              if (
+                delegateInfo &&
+                innerSender &&
+                fastAuthAccountSet.has(innerSender) &&
+                !uniqueUserTxs.has(txHash)
+              ) {
+                const innerReceiver = delegateInfo.innerReceiverId.toLowerCase();
+                const computed = computeActionsValue({
+                  actions: delegateInfo.innerActions,
+                  receiverId: innerReceiver,
+                  registry: tokenRegistry,
+                });
+                uniqueUserTxs.set(txHash, {
+                  txHash,
+                  blockHeight: BigInt(blockHeight),
+                  blockTimestamp: blockTs,
+                  signerAccountId: innerSender,
+                  signerPublicKey: delegateInfo.innerPublicKey,
+                  receiverId: innerReceiver,
+                  methodName: delegateInfo.innerMethodName,
+                  actionTypes: delegateInfo.innerActionTypes,
+                  metaWrapped: true,
+                  ...buildTokenColumns(computed),
+                  executionStatus,
+                  failureReason,
+                  gasBurnt,
+                });
+              }
+            }
+          }
         }
       }
 
@@ -1155,12 +1361,14 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         [...uniqueTransactions.values()],
         [...uniqueSignEvents.values()],
         [...uniqueConsumerTxs.values()],
+        [...uniqueUserTxs.values()],
       );
 
       processed += 1;
       indexedTransactions += insertResult.insertedTransactions;
       indexedFastAuthSignEvents += insertResult.insertedSignEvents;
       indexedConsumerTransactions += insertResult.insertedConsumerTransactions;
+      indexedUserTransactions += insertResult.insertedUserTransactions;
 
       if (blockHeight > latestPersistedHeight) {
         latestPersistedHeight = blockHeight;
@@ -1263,7 +1471,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         source: "near",
         status: "error",
         inserted: indexedTransactions,
-        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked); rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
       };
     }
 
@@ -1274,7 +1482,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       details:
         processed === 0
           ? `Checkpoint already at latest final block ${latestHeight}.`
-          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked); rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
     };
   } catch (error) {
     return {
