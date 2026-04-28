@@ -557,6 +557,89 @@ export default async function Home() {
 
       <section className="logsPanel">
         <div className="panelTitleRow">
+          <h2>Consumer transaction outcomes</h2>
+          <p>Relayer-submitted txs that consume FastAuth signatures (AddKey, Transfer, FunctionCall, …). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>.</p>
+        </div>
+        {data.consumerOutcomes.byWindow.all.total === 0 ? (
+          <p className="emptyState">No consumer transactions indexed yet. The collector will start populating these on its next run after a worker restart.</p>
+        ) : (
+          <>
+            <div className="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>24h</th>
+                    <th>7d</th>
+                    <th>30d</th>
+                    <th>All</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Total</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.total)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.total)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.total)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.total)}</td>
+                  </tr>
+                  <tr>
+                    <td>Succeeded</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.succeeded)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.succeeded)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.succeeded)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.succeeded)}</td>
+                  </tr>
+                  <tr>
+                    <td>Failed</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.failed)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.failed)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.failed)}</td>
+                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.failed)}</td>
+                  </tr>
+                  <tr>
+                    <td>Success rate</td>
+                    <td>{formatPercent(data.consumerOutcomes.byWindow.last24h.successRatePct)}</td>
+                    <td>{formatPercent(data.consumerOutcomes.byWindow.last7d.successRatePct)}</td>
+                    <td>{formatPercent(data.consumerOutcomes.byWindow.last30d.successRatePct)}</td>
+                    <td>{formatPercent(data.consumerOutcomes.byWindow.all.successRatePct)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {data.consumerOutcomes.topFailureReasons.length > 0 ? (
+              <div className="tableWrap" style={{ marginTop: 16 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Top failure reason</th>
+                      <th>24h</th>
+                      <th>7d</th>
+                      <th>30d</th>
+                      <th>All</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.consumerOutcomes.topFailureReasons.map((row) => (
+                      <tr key={row.reason}>
+                        <td><code>{row.reason}</code></td>
+                        <td>{formatNumber(row.last24h)}</td>
+                        <td>{formatNumber(row.last7d)}</td>
+                        <td>{formatNumber(row.last30d)}</td>
+                        <td>{formatNumber(row.all)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      <section className="logsPanel">
+        <div className="panelTitleRow">
           <h2>Top accounts</h2>
           <p>Most active NEAR accounts ranked by sign event count. Pick a window to re-rank. First/last seen reflect FastAuth activity, not on-chain account age. Note: counts include AddKey-type signs (setup churn) — see the Activity by action type panel above for the breakdown.</p>
         </div>

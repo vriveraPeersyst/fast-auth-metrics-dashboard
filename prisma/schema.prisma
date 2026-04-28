@@ -100,6 +100,36 @@ model FastAuthSignEvent {
   @@map("fastauth_sign_events")
 }
 
+// Tracks NEAR transactions submitted by a FastAuth relayer that wrap a
+// Delegate action signed with a FastAuth-derived key. These are the on-chain
+// "consumers" of FastAuth signatures — i.e. the AddKey/Transfer/FunctionCall
+// txs the relayer crafts after receiving a signature from FastAuth.sign().
+// Their execution_status / failure_reason tell us whether the action actually
+// landed on chain, independent of whether the original sign() call succeeded.
+model FastAuthConsumerTransaction {
+  id                   BigInt   @id @default(autoincrement())
+  txHash               String   @unique @map("tx_hash")
+  blockHeight          BigInt   @map("block_height")
+  blockTimestamp       DateTime @map("block_timestamp")
+  outerSignerId        String   @map("outer_signer_id")
+  outerSignerPublicKey String?  @map("outer_signer_public_key")
+  innerSignerId        String   @map("inner_signer_id")
+  innerReceiverId      String   @map("inner_receiver_id")
+  innerPublicKey       String   @map("inner_public_key")
+  innerActionTypes     String[] @map("inner_action_types")
+  executionStatus      String?  @map("execution_status")
+  failureReason        String?  @map("failure_reason")
+  linkedSignEventId    BigInt?  @map("linked_sign_event_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([blockTimestamp])
+  @@index([innerPublicKey, blockTimestamp])
+  @@index([innerSignerId, blockTimestamp])
+  @@index([failureReason])
+  @@index([executionStatus, blockTimestamp])
+  @@map("fastauth_consumer_transactions")
+}
+
 model FastAuthPublicKeyAccount {
   id              BigInt   @id @default(autoincrement())
   publicKey       String   @map("public_key")

@@ -175,6 +175,54 @@ export async function fetchChunkByHash(
   );
 }
 
+type DelegateActionInfo = {
+  innerSignerId: string;
+  innerReceiverId: string;
+  innerPublicKey: string;
+  innerActionTypes: string[];
+};
+
+// Pulls the inner DelegateAction out of a NEP-366 meta-transaction so we can
+// link it to the FastAuth sign event that produced its signature, and track
+// whether the relayer's submission of that signature actually landed on chain.
+export function extractDelegateActionInfo(
+  actions: unknown[] | undefined,
+): DelegateActionInfo | null {
+  if (!actions) return null;
+  for (const action of actions) {
+    if (!action || typeof action !== "object") continue;
+    const delegate = (action as Record<string, unknown>).Delegate;
+    if (!delegate || typeof delegate !== "object") continue;
+    const da = (delegate as Record<string, unknown>).delegate_action;
+    if (!da || typeof da !== "object") continue;
+    const sender = (da as Record<string, unknown>).sender_id;
+    const receiver = (da as Record<string, unknown>).receiver_id;
+    const pk = (da as Record<string, unknown>).public_key;
+    const innerActions = (da as Record<string, unknown>).actions;
+    if (
+      typeof sender !== "string" ||
+      typeof receiver !== "string" ||
+      typeof pk !== "string" ||
+      !Array.isArray(innerActions)
+    ) {
+      continue;
+    }
+    const innerActionTypes: string[] = [];
+    for (const inner of innerActions) {
+      if (!inner || typeof inner !== "object") continue;
+      const [name] = Object.keys(inner);
+      if (name) innerActionTypes.push(name);
+    }
+    return {
+      innerSignerId: sender.trim(),
+      innerReceiverId: receiver.trim(),
+      innerPublicKey: pk.trim(),
+      innerActionTypes,
+    };
+  }
+  return null;
+}
+
 export function parseActionMetadata(actions: unknown[] | undefined): {
   methodName: string | null;
   attachedDepositYocto: string | null;
@@ -779,18 +827,27 @@ export async function persistNearBlock(
   blockTimestamp: number | undefined,
   transactions: Prisma.NearTransactionCreateManyInput[],
   signEvents: FastAuthSignEventSeed[],
-): Promise<{ insertedTransactions: number; insertedSignEvents: number }> {
+  consumerTransactions: Prisma.FastAuthConsumerTransactionCreateManyInput[] = [],
+): Promise<{
+  insertedTransactions: number;
+  insertedSignEvents: number;
+  insertedConsumerTransactions: number;
+}> {
   // Fast path: most NEAR blocks contain no FastAuth-relevant transactions.
   // Avoid opening a Prisma transaction (or even a single round-trip) when
   // there is nothing to write.
-  if (transactions.length === 0 && signEvents.length === 0) {
-    return { insertedTransactions: 0, insertedSignEvents: 0 };
+  if (
+    transactions.length === 0 &&
+    signEvents.length === 0 &&
+    consumerTransactions.length === 0
+  ) {
+    return { insertedTransactions: 0, insertedSignEvents: 0, insertedConsumerTransactions: 0 };
   }
 
-  // The two createMany statements are independently row-atomic and
+  // All three createMany statements are independently row-atomic and
   // skipDuplicates makes re-runs idempotent, so we don't need an interactive
-  // transaction wrapping them. Running them in parallel halves DB round-trips.
-  const [txInsert, signInsert] = await Promise.all([
+  // transaction wrapping them. Running them in parallel reduces DB round-trips.
+  const [txInsert, signInsert, consumerInsert] = await Promise.all([
     transactions.length > 0
       ? prisma.nearTransaction.createMany({
           data: transactions,
@@ -803,11 +860,18 @@ export async function persistNearBlock(
           skipDuplicates: true,
         })
       : Promise.resolve({ count: 0 }),
+    consumerTransactions.length > 0
+      ? prisma.fastAuthConsumerTransaction.createMany({
+          data: consumerTransactions,
+          skipDuplicates: true,
+        })
+      : Promise.resolve({ count: 0 }),
   ]);
 
   return {
     insertedTransactions: txInsert.count,
     insertedSignEvents: signInsert.count,
+    insertedConsumerTransactions: consumerInsert.count,
   };
 }
 
@@ -918,10 +982,33 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       }),
     );
 
+    // Load every FastAuth-derived public key seen so far. We use this set to
+    // identify consumer transactions: relayer-submitted txs whose inner
+    // DelegateAction was signed with a FastAuth-derived key. Membership
+    // testing is O(1), and even a 100k-row distinct scan finishes in <1s on
+    // an indexed column. Refreshed once per iteration.
+    const fastAuthPubKeySet = new Set<string>();
+    try {
+      const rows = await prisma.fastAuthSignEvent.findMany({
+        where: { userDerivedPublicKey: { not: null } },
+        distinct: ["userDerivedPublicKey"],
+        select: { userDerivedPublicKey: true },
+      });
+      for (const row of rows) {
+        if (row.userDerivedPublicKey) {
+          fastAuthPubKeySet.add(row.userDerivedPublicKey);
+        }
+      }
+    } catch {
+      // Best-effort: if the load fails, we just skip consumer-tx detection
+      // for this iteration and keep going.
+    }
+
     let processed = 0;
     let skippedHeights = 0;
     let indexedTransactions = 0;
     let indexedFastAuthSignEvents = 0;
+    let indexedConsumerTransactions = 0;
     let latestPersistedHash: string | null = null;
     let latestPersistedHeight = -1;
     // Tracks heights that finished (successfully or safely-skipped) so we can
@@ -971,6 +1058,10 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
 
       const uniqueTransactions = new Map<string, Prisma.NearTransactionCreateManyInput>();
       const uniqueSignEvents = new Map<string, FastAuthSignEventSeed>();
+      const uniqueConsumerTxs = new Map<
+        string,
+        Prisma.FastAuthConsumerTransactionCreateManyInput
+      >();
 
       const chunkPayloads: NearChunkResponse[] = new Array(chunkHashes.length);
       await runWithConcurrency(chunkHashes, chunkConcurrency, async (chunkHash, idx) => {
@@ -986,45 +1077,72 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
             continue;
           }
 
-          const normalizedReceiverId = tx.receiver_id?.trim().toLowerCase() ?? null;
-          if (!normalizedReceiverId || !fastAuthContractSet.has(normalizedReceiverId)) {
-            continue;
-          }
-
-          const { methodName, attachedDepositYocto } = parseActionMetadata(tx.actions);
           const outcome = tx.outcome?.outcome;
           const gasBurnt = toNullableBigInt(outcome?.gas_burnt);
           const { executionStatus, failureReason } = parseExecutionStatus(outcome?.status);
           const relayerPublicKey = normalizeNearPublicKey(tx.public_key);
-          const derivedSignEvents = deriveFastAuthSignEventsFromTransaction({
-            tx,
-            blockHeight,
-            blockTimestamp,
-            executionStatus,
-            failureReason,
-            gasBurnt,
-            relayerPublicKey,
-            fastAuthContractSet,
-          });
+          const normalizedReceiverId = tx.receiver_id?.trim().toLowerCase() ?? null;
 
-          uniqueTransactions.set(txHash, {
-            txHash,
-            blockHeight: BigInt(blockHeight),
-            blockTimestamp: toDateFromNearNs(blockTimestamp),
-            signerAccountId: tx.signer_id ?? null,
-            signerPublicKey: relayerPublicKey,
-            receiverId: normalizedReceiverId,
-            methodName,
-            executionStatus,
-            failureReason,
-            gasBurnt,
-            attachedDepositYocto,
-            payload: toTransactionPayload(tx),
-          });
+          // Path 1: txs to a FastAuth contract (sign() calls). Existing logic.
+          if (normalizedReceiverId && fastAuthContractSet.has(normalizedReceiverId)) {
+            const { methodName, attachedDepositYocto } = parseActionMetadata(tx.actions);
+            const derivedSignEvents = deriveFastAuthSignEventsFromTransaction({
+              tx,
+              blockHeight,
+              blockTimestamp,
+              executionStatus,
+              failureReason,
+              gasBurnt,
+              relayerPublicKey,
+              fastAuthContractSet,
+            });
 
-          for (const signEvent of derivedSignEvents) {
-            // Composite unique key is (txHash, actionIndex).
-            uniqueSignEvents.set(`${signEvent.txHash}:${signEvent.actionIndex}`, signEvent);
+            uniqueTransactions.set(txHash, {
+              txHash,
+              blockHeight: BigInt(blockHeight),
+              blockTimestamp: toDateFromNearNs(blockTimestamp),
+              signerAccountId: tx.signer_id ?? null,
+              signerPublicKey: relayerPublicKey,
+              receiverId: normalizedReceiverId,
+              methodName,
+              executionStatus,
+              failureReason,
+              gasBurnt,
+              attachedDepositYocto,
+              payload: toTransactionPayload(tx),
+            });
+
+            for (const signEvent of derivedSignEvents) {
+              uniqueSignEvents.set(`${signEvent.txHash}:${signEvent.actionIndex}`, signEvent);
+            }
+          }
+
+          // Path 2: consumer txs. Any tx whose actions contain a Delegate
+          // signed by a FastAuth-derived key — the relayer's submission of
+          // a previously FastAuth-signed action. This is independent of who
+          // the receiver is and doesn't require the outer signer to be in
+          // any allowlist; the inner public-key match is sufficient.
+          if (fastAuthPubKeySet.size > 0) {
+            const delegateInfo = extractDelegateActionInfo(tx.actions);
+            if (delegateInfo && fastAuthPubKeySet.has(delegateInfo.innerPublicKey)) {
+              const blockTs = toDateFromNearNs(blockTimestamp);
+              if (blockTs) {
+                uniqueConsumerTxs.set(txHash, {
+                  txHash,
+                  blockHeight: BigInt(blockHeight),
+                  blockTimestamp: blockTs,
+                  outerSignerId: tx.signer_id ?? "(unknown)",
+                  outerSignerPublicKey: relayerPublicKey,
+                  innerSignerId: delegateInfo.innerSignerId,
+                  innerReceiverId: delegateInfo.innerReceiverId,
+                  innerPublicKey: delegateInfo.innerPublicKey,
+                  innerActionTypes: delegateInfo.innerActionTypes,
+                  executionStatus,
+                  failureReason,
+                  linkedSignEventId: null,
+                });
+              }
+            }
           }
         }
       }
@@ -1036,11 +1154,13 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         blockTimestamp,
         [...uniqueTransactions.values()],
         [...uniqueSignEvents.values()],
+        [...uniqueConsumerTxs.values()],
       );
 
       processed += 1;
       indexedTransactions += insertResult.insertedTransactions;
       indexedFastAuthSignEvents += insertResult.insertedSignEvents;
+      indexedConsumerTransactions += insertResult.insertedConsumerTransactions;
 
       if (blockHeight > latestPersistedHeight) {
         latestPersistedHeight = blockHeight;
@@ -1109,6 +1229,32 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
             relayers: 0,
           };
 
+    // Link unlinked consumer txs to the FastAuth sign event that produced
+    // their signature. Pick the most-recent sign event whose derived pubkey
+    // matches the consumer's inner_public_key and whose block_timestamp is
+    // within 60s before the consumer. Idempotent: only updates rows where
+    // linked_sign_event_id IS NULL.
+    let linkedConsumerCount = 0;
+    if (indexedConsumerTransactions > 0) {
+      try {
+        linkedConsumerCount = Number(await prisma.$executeRaw`
+          UPDATE fastauth_consumer_transactions ct
+          SET linked_sign_event_id = (
+            SELECT se.id
+            FROM fastauth_sign_events se
+            WHERE se.user_derived_public_key = ct.inner_public_key
+              AND se.block_timestamp <= ct.block_timestamp
+              AND se.block_timestamp >= ct.block_timestamp - INTERVAL '60 seconds'
+            ORDER BY se.block_timestamp DESC
+            LIMIT 1
+          )
+          WHERE ct.linked_sign_event_id IS NULL
+        `);
+      } catch {
+        // Linking is best-effort; we can re-run it later via a periodic task.
+      }
+    }
+
     if (runError !== null) {
       const message =
         runError instanceof Error ? runError.message : "Unknown NEAR collector error.";
@@ -1117,7 +1263,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         source: "near",
         status: "error",
         inserted: indexedTransactions,
-        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions and ${indexedFastAuthSignEvents} sign events; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked); rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
       };
     }
 
@@ -1128,7 +1274,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       details:
         processed === 0
           ? `Checkpoint already at latest final block ${latestHeight}.`
-          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions and ${indexedFastAuthSignEvents} FastAuth sign events; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked); rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
     };
   } catch (error) {
     return {

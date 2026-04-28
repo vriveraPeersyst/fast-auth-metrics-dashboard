@@ -61,6 +61,9 @@ type RecentSignEvent = {
   userDerivedPublicKey: string | null;
   userAccountId: string | null;
   signActionType: string | null;
+  consumerStatus: "succeeded" | "failed" | "pending";
+  consumerFailureReason: string | null;
+  consumerTxHash: string | null;
   projectDappId: string | null;
   sponsoredAccountId: string | null;
   executionStatus: string | null;
@@ -189,6 +192,31 @@ type ActionTypeBreakdownItem = {
   all: number;
 };
 
+type ConsumerOutcomeWindow = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  successRatePct: number | null;
+};
+
+type ConsumerFailureReasonRow = {
+  reason: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+};
+
+type ConsumerOutcomes = {
+  byWindow: {
+    last24h: ConsumerOutcomeWindow;
+    last7d: ConsumerOutcomeWindow;
+    last30d: ConsumerOutcomeWindow;
+    all: ConsumerOutcomeWindow;
+  };
+  topFailureReasons: ConsumerFailureReasonRow[];
+};
+
 type TopAccountRow = {
   accountId: string;
   signEventsAll: number;
@@ -205,6 +233,7 @@ type DashboardData = {
   providerBreakdown: ProviderBreakdownItem[];
   guardBreakdown: GuardBreakdownItem[];
   actionTypeBreakdown: ActionTypeBreakdownItem[];
+  consumerOutcomes: ConsumerOutcomes;
   topAccounts: TopAccountRow[];
   latestNearFinalBlock: string | null;
   indexerLag: IndexerLag;
@@ -510,6 +539,86 @@ async function loadActionTypeBreakdown(
   }));
 }
 
+async function loadConsumerOutcomes(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+): Promise<ConsumerOutcomes> {
+  const [windowsRow] = await prisma.$queryRaw<
+    Array<{
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+    }>
+  >`
+    SELECT
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions
+  `;
+
+  const reasonRows = await prisma.$queryRaw<
+    Array<{
+      reason: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+    }>
+  >`
+    SELECT
+      failure_reason AS reason,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h
+    FROM fastauth_consumer_transactions
+    WHERE failure_reason IS NOT NULL
+    GROUP BY failure_reason
+    ORDER BY total_all DESC
+    LIMIT 10
+  `;
+
+  const buildWindow = (total: bigint, failed: bigint): ConsumerOutcomeWindow => {
+    const totalNum = Number(total);
+    const failedNum = Number(failed);
+    const succeeded = Math.max(0, totalNum - failedNum);
+    return {
+      total: totalNum,
+      succeeded,
+      failed: failedNum,
+      successRatePct: totalNum > 0 ? Math.round((succeeded / totalNum) * 1000) / 10 : null,
+    };
+  };
+
+  return {
+    byWindow: {
+      last24h: buildWindow(windowsRow?.total_24h ?? BigInt(0), windowsRow?.failed_24h ?? BigInt(0)),
+      last7d: buildWindow(windowsRow?.total_7d ?? BigInt(0), windowsRow?.failed_7d ?? BigInt(0)),
+      last30d: buildWindow(windowsRow?.total_30d ?? BigInt(0), windowsRow?.failed_30d ?? BigInt(0)),
+      all: buildWindow(windowsRow?.total_all ?? BigInt(0), windowsRow?.failed_all ?? BigInt(0)),
+    },
+    topFailureReasons: reasonRows.map((r) => ({
+      reason: r.reason ?? "(unknown)",
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+    })),
+  };
+}
+
 async function loadTopAccounts(
   last24h: Date,
   last7d: Date,
@@ -683,6 +792,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const providerBreakdownPromise = loadProviderBreakdown(last24h, last7d, last30d, failureWhere);
   const topAccountsPromise = loadTopAccounts(last24h, last7d, last30d, MAX_TOP_ACCOUNTS);
   const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
+  const consumerOutcomesPromise = loadConsumerOutcomes(last24h, last7d, last30d);
 
   const [
     accountsTotal,
@@ -969,27 +1079,63 @@ export async function getDashboardData(): Promise<DashboardData> {
     executionStatus: tx.executionStatus,
   }));
 
-  const recentSignEvents: RecentSignEvent[] = recentSignEventsRaw.map((event) => ({
-    id: event.id.toString(),
-    txHash: event.txHash,
-    actionIndex: event.actionIndex,
-    blockHeight: event.blockHeight.toString(),
-    blockTimestamp: event.blockTimestamp,
-    relayerAccountId: event.relayerAccountId,
-    fastAuthContractId: event.fastAuthContractId,
-    guardName: event.guardName,
-    providerType: event.providerType,
-    algorithm: event.algorithm,
-    userDomainId: event.userDomainId,
-    userDerivedPublicKey: event.userDerivedPublicKey,
-    userAccountId: event.userAccountId,
-    signActionType: event.signActionType,
-    projectDappId: event.projectDappId,
-    sponsoredAccountId: event.sponsoredAccountId,
-    executionStatus: event.executionStatus,
-    gasBurnt:
-      typeof event.gasBurnt === "bigint" ? event.gasBurnt.toString() : event.gasBurnt ?? null,
-  }));
+  // Look up the consumer tx (if any) for each recent sign event so we can show
+  // whether the relayer's downstream submission of the FastAuth signature
+  // actually landed on chain — and what the failure reason was if it didn't.
+  const recentEventIds = recentSignEventsRaw
+    .map((event) => event.id)
+    .filter((id): id is bigint => typeof id === "bigint");
+  const consumerByEventId = new Map<
+    string,
+    { failureReason: string | null; txHash: string }
+  >();
+  if (recentEventIds.length > 0) {
+    const consumerRows = await prisma.fastAuthConsumerTransaction.findMany({
+      where: { linkedSignEventId: { in: recentEventIds } },
+      select: { linkedSignEventId: true, failureReason: true, txHash: true },
+    });
+    for (const row of consumerRows) {
+      if (row.linkedSignEventId) {
+        consumerByEventId.set(row.linkedSignEventId.toString(), {
+          failureReason: row.failureReason,
+          txHash: row.txHash,
+        });
+      }
+    }
+  }
+
+  const recentSignEvents: RecentSignEvent[] = recentSignEventsRaw.map((event) => {
+    const consumer = consumerByEventId.get(event.id.toString()) ?? null;
+    const consumerStatus: RecentSignEvent["consumerStatus"] = consumer
+      ? consumer.failureReason
+        ? "failed"
+        : "succeeded"
+      : "pending";
+    return {
+      id: event.id.toString(),
+      txHash: event.txHash,
+      actionIndex: event.actionIndex,
+      blockHeight: event.blockHeight.toString(),
+      blockTimestamp: event.blockTimestamp,
+      relayerAccountId: event.relayerAccountId,
+      fastAuthContractId: event.fastAuthContractId,
+      guardName: event.guardName,
+      providerType: event.providerType,
+      algorithm: event.algorithm,
+      userDomainId: event.userDomainId,
+      userDerivedPublicKey: event.userDerivedPublicKey,
+      userAccountId: event.userAccountId,
+      signActionType: event.signActionType,
+      consumerStatus,
+      consumerFailureReason: consumer?.failureReason ?? null,
+      consumerTxHash: consumer?.txHash ?? null,
+      projectDappId: event.projectDappId,
+      sponsoredAccountId: event.sponsoredAccountId,
+      executionStatus: event.executionStatus,
+      gasBurnt:
+        typeof event.gasBurnt === "bigint" ? event.gasBurnt.toString() : event.gasBurnt ?? null,
+    };
+  });
 
   const indexerCheckpoints: IndexerCheckpointRow[] = indexerCheckpointsRaw.map((row) => ({
     key: row.key,
@@ -1099,6 +1245,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const providerBreakdown = await providerBreakdownPromise;
   const topAccounts = await topAccountsPromise;
   const actionTypeBreakdown = await actionTypeBreakdownPromise;
+  const consumerOutcomes = await consumerOutcomesPromise;
 
   return {
     accountsOverview,
@@ -1106,6 +1253,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     providerBreakdown,
     guardBreakdown,
     actionTypeBreakdown,
+    consumerOutcomes,
     topAccounts,
     latestNearFinalBlock: nearChainHeadCheckpoint?.value ?? nearHeightCheckpoint?.value ?? null,
     indexerLag,
