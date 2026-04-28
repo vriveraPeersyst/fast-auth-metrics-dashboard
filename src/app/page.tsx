@@ -240,9 +240,8 @@ export default async function Home() {
           <UptimeBar label="Last 24h" points={mpcUptimePoints} />
 
           <p className="healthDetails">
-            Success rate of MPC signing receipts. Counts only FastAuth transactions whose
-            execution chain reached the MPC contract — guard-side rejections (JWT/auth) are
-            excluded so this metric isolates MPC network health.
+            Success rate of MPC signing receipts. Excludes guard-side rejections to isolate MPC
+            network health.
           </p>
         </article>
 
@@ -335,9 +334,8 @@ export default async function Home() {
           <UptimeBar label="Last 24h" points={fastAuthUptimePoints} />
 
           <p className="healthDetails">
-            Live probe of the last {data.fastAuthChainHealth?.windowBlocks ?? "~"} NEAR blocks from
-            chain head. Success rate is the share of FastAuth transactions whose receipts chain
-            executed without failure (guard verification, MPC call, callback).
+            Live probe of the last {data.fastAuthChainHealth?.windowBlocks ?? "~"} blocks. Share of
+            FastAuth txs whose full receipt chain (guard, MPC, callback) executed cleanly.
           </p>
         </article>
       </section>
@@ -384,7 +382,7 @@ export default async function Home() {
       <section className="logsPanel">
         <div className="panelTitleRow">
           <h2>Transactions</h2>
-          <p>FastAuth sign-event volume per window. Use the tabs to slice by provider, guard, or signed action type.</p>
+          <p>Sign-event volume per window. Tabs slice by provider, guard, or action type.</p>
         </div>
         <TransactionsPanel
           transactionOverview={data.transactionOverview}
@@ -398,7 +396,7 @@ export default async function Home() {
       <section className="logsPanel">
         <div className="panelTitleRow">
           <h2>Consumer transactions</h2>
-          <p>Relayer-submitted txs whose Delegate was signed by FastAuth&rsquo;s MPC. In practice this is mostly <code>AddKey</code> / <code>DeleteKey</code> — the wallet uses FastAuth only to install or rotate access keys, then signs ordinary user activity (<code>ft_transfer</code>, <code>claim</code>, &hellip;) locally with the installed key (those don&rsquo;t appear here — see &ldquo;Real activity&rdquo; below). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>.</p>
+          <p>Relayer-submitted txs signed by FastAuth&rsquo;s MPC — mostly <code>AddKey</code> / <code>DeleteKey</code> from login churn. Real user activity is signed locally; see &ldquo;Real activity&rdquo; below.</p>
         </div>
         <ConsumerOutcomesPanel data={data.consumerOutcomes} />
       </section>
@@ -407,11 +405,8 @@ export default async function Home() {
         <div className="panelTitleRow">
           <h2>Real activity</h2>
           <p>
-            On-chain activity by FastAuth users — every tx whose signer is an account holding the
-            FastAuth-derived MPC key (<code>K_FA</code>). Captures everything the user actually
-            does (ft_transfer, claim, contract calls, &hellip;), regardless of which session key
-            signed it. Anchored on the account, not the key, so user attribution stays stable
-            across logout / reinstall cycles where the wallet rotates session keys.
+            On-chain txs from accounts holding a FastAuth-derived MPC key (<code>K_FA</code>) —
+            every action the user takes, regardless of which session key signed it.
           </p>
         </div>
         <RealActivityPanel data={data.realActivity} />
@@ -420,7 +415,7 @@ export default async function Home() {
       <section className="logsPanel">
         <div className="panelTitleRow">
           <h2>Top accounts signing with <code>fast-auth.near</code></h2>
-          <p>NEAR accounts ranked by how many <code>FastAuth.sign()</code> calls have been made for keys they hold. Pick a window to re-rank. These are accounts whose FastAuth-derived key (<code>K_FA</code>) we&rsquo;ve seen routed through MPC — driven by AddKey/DeleteKey churn (login/logout cycles), not user product activity. For real on-chain user activity see the Real activity panel above. First/last seen reflect FastAuth activity, not on-chain account age.</p>
+          <p>Accounts ranked by <code>FastAuth.sign()</code> calls — driven by login/logout key churn, not product activity. Pick a window to re-rank.</p>
         </div>
         <TopAccountsTable rows={data.topAccounts} />
       </section>
@@ -470,9 +465,7 @@ export default async function Home() {
           </dl>
 
           <p className="healthDetails">
-            Gap between the NEAR chain head and the last height the indexer has fully scanned. The
-            24h window is measured against <code>blockTimestamp</code>, so it stays at zero until
-            the indexer catches up to the last 24 hours of blocks.
+            Gap between chain head and the last height the indexer has fully scanned.
           </p>
         </article>
 
@@ -562,9 +555,8 @@ export default async function Home() {
             </div>
           )}
           <p className="healthDetails">
-            Block ranges that are not yet indexed. Source of truth is the{" "}
-            <code>missing_block_ranges</code> table. Closed ranges are filled; open ranges still
-            need an archival-backed backfill (<code>pnpm backfill:range</code>).
+            Unindexed block ranges. Open ranges need an archival backfill
+            (<code>pnpm backfill:range</code>).
           </p>
         </article>
       </section>

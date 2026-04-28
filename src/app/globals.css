@@ -688,8 +688,24 @@ h3 {
 /* Tables */
 .tableWrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+}
+
+.tablePagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tablePagination__controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 table {
@@ -737,6 +753,12 @@ tbody tr:hover {
   color: var(--color-ink-muted);
   padding: 16px 0;
   font-size: 14px;
+}
+
+/* Tab strip — wraps on small screens to avoid horizontal overflow */
+.metricTabsStrip {
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 /* Metric tabs — pivoted card with time-window strip */
@@ -931,8 +953,36 @@ tbody tr:hover {
     padding: 16px 20px;
   }
 
+  .dashboardTopbar h1 {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .topbarBrand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  h1 {
+    font-size: 28px;
+    line-height: 34px;
+  }
+
+  h2 {
+    font-size: 18px;
+    line-height: 24px;
+  }
+
   .metricCard {
     grid-column: span 6;
+    padding: 20px;
+    min-height: auto;
+  }
+
+  .metricCard p {
+    font-size: 26px;
+    line-height: 32px;
   }
 
   .metricTabsCard {
@@ -943,15 +993,68 @@ tbody tr:hover {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+    padding: 16px 20px;
+  }
+
+  .metricTabsBody {
+    padding: 20px;
+  }
+
+  .metricTabsValue {
+    font-size: 18px;
+    line-height: 24px;
+  }
+
+  .metricTabsValue--headline {
+    font-size: 26px;
+    line-height: 32px;
   }
 
   .healthGrid {
     grid-template-columns: 1fr;
   }
 
+  .healthCard {
+    padding: 20px;
+  }
+
+  .statusFocusGrid > .healthCard {
+    padding: 20px;
+  }
+
+  .statusFocusGrid > .healthCard .healthCardHeader h3 {
+    font-size: 18px;
+    line-height: 24px;
+  }
+
+  .healthCardHeader {
+    flex-wrap: wrap;
+  }
+
+  .healthMetaList {
+    grid-template-columns: 1fr;
+    row-gap: 4px;
+  }
+
+  .healthMetaList > div {
+    display: block;
+    padding-bottom: 8px;
+  }
+
+  .healthMetaList dt {
+    font-size: 12px;
+  }
+
   .uptimeRow {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .panelTitleRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 16px;
   }
 
   .logsPanel,
@@ -961,5 +1064,62 @@ tbody tr:hover {
 
   .signInCard {
     padding: 24px;
+  }
+
+  th,
+  td {
+    padding: 10px 12px;
+  }
+
+  table {
+    font-size: 13px;
+  }
+
+  td {
+    font-size: 12px;
+  }
+
+  .tablePagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tablePagination__controls {
+    justify-content: space-between;
+  }
+
+  .dashboardFooter {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboardRoot {
+    width: min(1184px, 100% - 16px);
+  }
+
+  .logsPanel,
+  .healthPanel,
+  .healthCard,
+  .statusFocusGrid > .healthCard {
+    padding: 16px;
+  }
+
+  .metricTab {
+    padding: 6px 10px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  h1 {
+    font-size: 24px;
+    line-height: 30px;
+  }
+
+  .signInLogo {
+    font-size: 36px;
+    line-height: 44px;
   }
 }

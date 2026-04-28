@@ -5,6 +5,8 @@ import { useState } from "react";
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
 
+const PAGE_SIZE = 10;
+
 type ActivityWindow = {
   total: number;
   succeeded: number;
@@ -171,6 +173,54 @@ function OverallTable({ byWindow }: { byWindow: RealActivity["byWindow"] }) {
 
 type RenderMode = "code" | "account-link" | "plain";
 
+function Pagination({
+  page,
+  totalPages,
+  start,
+  pageSize,
+  total,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  start: number;
+  pageSize: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  if (total <= pageSize) return null;
+  return (
+    <div className="tablePagination">
+      <span className="healthMetaHint">
+        Showing {start + 1}–{Math.min(start + pageSize, total)} of {formatNumber(total)}
+      </span>
+      <div className="tablePagination__controls">
+        <button
+          type="button"
+          className="metricTab"
+          onClick={onPrev}
+          disabled={page === 0}
+        >
+          Prev
+        </button>
+        <span className="healthMetaHint" style={{ alignSelf: "center" }}>
+          Page {page + 1} / {totalPages}
+        </span>
+        <button
+          type="button"
+          className="metricTab"
+          onClick={onNext}
+          disabled={page >= totalPages - 1}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GroupTable({
   rows,
   keyLabel,
@@ -182,49 +232,68 @@ function GroupTable({
   renderMode?: RenderMode;
   formatLabel?: (key: string) => string;
 }) {
+  const [page, setPage] = useState(0);
+
   if (rows.length === 0) {
     return <p className="emptyState">No data for this slice yet.</p>;
   }
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const start = currentPage * PAGE_SIZE;
+  const visible = rows.slice(start, start + PAGE_SIZE);
+
   return (
-    <div className="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{keyLabel}</th>
-            <th>24h</th>
-            <th>7d</th>
-            <th>30d</th>
-            <th>All</th>
-            <th>USD volume (all)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const display = formatLabel ? formatLabel(row.key) : row.key;
-            return (
-              <tr key={row.key}>
-                <td>
-                  {renderMode === "account-link" ? (
-                    <NearblocksLink kind="account" value={row.key}>
-                      {display}
-                    </NearblocksLink>
-                  ) : renderMode === "plain" ? (
-                    display
-                  ) : (
-                    <code>{display}</code>
-                  )}
-                </td>
-                <td>{formatNumber(row.last24h)}</td>
-                <td>{formatNumber(row.last7d)}</td>
-                <td>{formatNumber(row.last30d)}</td>
-                <td>{formatNumber(row.all)}</td>
-                <td>{formatUsd(row.volumeUsdAll)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{keyLabel}</th>
+              <th>24h</th>
+              <th>7d</th>
+              <th>30d</th>
+              <th>All</th>
+              <th>USD volume (all)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((row) => {
+              const display = formatLabel ? formatLabel(row.key) : row.key;
+              return (
+                <tr key={row.key}>
+                  <td>
+                    {renderMode === "account-link" ? (
+                      <NearblocksLink kind="account" value={row.key}>
+                        {display}
+                      </NearblocksLink>
+                    ) : renderMode === "plain" ? (
+                      display
+                    ) : (
+                      <code>{display}</code>
+                    )}
+                  </td>
+                  <td>{formatNumber(row.last24h)}</td>
+                  <td>{formatNumber(row.last7d)}</td>
+                  <td>{formatNumber(row.last30d)}</td>
+                  <td>{formatNumber(row.all)}</td>
+                  <td>{formatUsd(row.volumeUsdAll)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        page={currentPage}
+        totalPages={totalPages}
+        start={start}
+        pageSize={PAGE_SIZE}
+        total={rows.length}
+        onPrev={() => setPage((p) => Math.max(0, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+      />
+    </>
   );
 }
 
@@ -243,61 +312,80 @@ function CrossTable({
   innerRenderMode?: RenderMode;
   formatClassLabel?: (key: string) => string;
 }) {
+  const [page, setPage] = useState(0);
+
   if (rows.length === 0) {
     return <p className="emptyState">No data for this slice yet.</p>;
   }
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const start = currentPage * PAGE_SIZE;
+  const visible = rows.slice(start, start + PAGE_SIZE);
+
   return (
-    <div className="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{classLabel}</th>
-            <th>{innerLabel}</th>
-            <th>24h</th>
-            <th>7d</th>
-            <th>30d</th>
-            <th>All</th>
-            <th>USD volume (all)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const classDisplay = formatClassLabel
-              ? formatClassLabel(row.classKey)
-              : row.classKey;
-            return (
-              <tr key={`${row.classKey}|${row.innerKey}`}>
-                <td>
-                  {classRenderMode === "account-link" ? (
-                    <NearblocksLink kind="account" value={row.classKey}>
-                      {classDisplay}
-                    </NearblocksLink>
-                  ) : classRenderMode === "plain" ? (
-                    classDisplay
-                  ) : (
-                    <code>{classDisplay}</code>
-                  )}
-                </td>
-                <td>
-                  {innerRenderMode === "account-link" ? (
-                    <NearblocksLink kind="account" value={row.innerKey}>
-                      {row.innerKey}
-                    </NearblocksLink>
-                  ) : (
-                    <code>{row.innerKey}</code>
-                  )}
-                </td>
-                <td>{formatNumber(row.last24h)}</td>
-                <td>{formatNumber(row.last7d)}</td>
-                <td>{formatNumber(row.last30d)}</td>
-                <td>{formatNumber(row.all)}</td>
-                <td>{formatUsd(row.volumeUsdAll)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{classLabel}</th>
+              <th>{innerLabel}</th>
+              <th>24h</th>
+              <th>7d</th>
+              <th>30d</th>
+              <th>All</th>
+              <th>USD volume (all)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((row) => {
+              const classDisplay = formatClassLabel
+                ? formatClassLabel(row.classKey)
+                : row.classKey;
+              return (
+                <tr key={`${row.classKey}|${row.innerKey}`}>
+                  <td>
+                    {classRenderMode === "account-link" ? (
+                      <NearblocksLink kind="account" value={row.classKey}>
+                        {classDisplay}
+                      </NearblocksLink>
+                    ) : classRenderMode === "plain" ? (
+                      classDisplay
+                    ) : (
+                      <code>{classDisplay}</code>
+                    )}
+                  </td>
+                  <td>
+                    {innerRenderMode === "account-link" ? (
+                      <NearblocksLink kind="account" value={row.innerKey}>
+                        {row.innerKey}
+                      </NearblocksLink>
+                    ) : (
+                      <code>{row.innerKey}</code>
+                    )}
+                  </td>
+                  <td>{formatNumber(row.last24h)}</td>
+                  <td>{formatNumber(row.last7d)}</td>
+                  <td>{formatNumber(row.last30d)}</td>
+                  <td>{formatNumber(row.all)}</td>
+                  <td>{formatUsd(row.volumeUsdAll)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        page={currentPage}
+        totalPages={totalPages}
+        start={start}
+        pageSize={PAGE_SIZE}
+        total={rows.length}
+        onPrev={() => setPage((p) => Math.max(0, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+      />
+    </>
   );
 }
 
@@ -384,8 +472,7 @@ export function RealActivityPanel({ data }: { data: RealActivity }) {
             background: "var(--color-surface-muted)",
           }}
         >
-          <strong>Note:</strong> user activity is indexed forward-only — historical txs before this
-          collector started are not present. Earliest user tx in DB: block{" "}
+          <strong>Note:</strong> forward-only — earliest user tx: block{" "}
           <NearblocksLink kind="block" value={data.trackingStartedAt.blockHeight} /> at{" "}
           <LocalTime iso={data.trackingStartedAt.blockTimestamp} />.
         </p>
