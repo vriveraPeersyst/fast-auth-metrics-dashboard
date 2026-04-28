@@ -184,6 +184,13 @@ type ProviderBreakdownItem = {
   last30d: GuardWindowStats;
 };
 
+type RelayerActivityItem = {
+  relayerAccountId: string;
+  last24h: GuardWindowStats;
+  last7d: GuardWindowStats;
+  last30d: GuardWindowStats;
+};
+
 type ActionTypeBreakdownItem = {
   actionType: string;
   last24h: number;
@@ -207,14 +214,29 @@ type ConsumerFailureReasonRow = {
   all: number;
 };
 
+type ConsumerOutcomesByWindow = {
+  last24h: ConsumerOutcomeWindow;
+  last7d: ConsumerOutcomeWindow;
+  last30d: ConsumerOutcomeWindow;
+  all: ConsumerOutcomeWindow;
+};
+
+type ConsumerOutcomesGroup = {
+  key: string;
+  byWindow: ConsumerOutcomesByWindow;
+};
+
 type ConsumerOutcomes = {
-  byWindow: {
-    last24h: ConsumerOutcomeWindow;
-    last7d: ConsumerOutcomeWindow;
-    last30d: ConsumerOutcomeWindow;
-    all: ConsumerOutcomeWindow;
-  };
+  byWindow: ConsumerOutcomesByWindow;
+  byRelayer: ConsumerOutcomesGroup[];
+  byGuard: ConsumerOutcomesGroup[];
+  byProvider: ConsumerOutcomesGroup[];
+  byActionType: ConsumerOutcomesGroup[];
   topFailureReasons: ConsumerFailureReasonRow[];
+  trackingStartedAt: {
+    blockHeight: string;
+    blockTimestamp: Date;
+  } | null;
 };
 
 type TopAccountRow = {
@@ -231,6 +253,7 @@ type DashboardData = {
   accountsOverview: AggregateAccountsMetrics;
   transactionOverview: TransactionMetrics;
   providerBreakdown: ProviderBreakdownItem[];
+  relayerBreakdownByActivity: RelayerActivityItem[];
   guardBreakdown: GuardBreakdownItem[];
   actionTypeBreakdown: ActionTypeBreakdownItem[];
   consumerOutcomes: ConsumerOutcomes;
@@ -505,6 +528,132 @@ async function loadProviderBreakdown(
     .sort((a, b) => b.last30d.total - a.last30d.total);
 }
 
+async function loadRelayerBreakdownByActivity(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+  failureWhere: object,
+): Promise<RelayerActivityItem[]> {
+  // Same shape as loadProviderBreakdown but grouped by the relayer account
+  // that called fast-auth.near.sign() (sign event signer). Today there's
+  // typically one relayer (sweat-relayer.near); the query is future-proof.
+  const windows: Array<{ key: "last24h" | "last7d" | "last30d"; gte: Date }> = [
+    { key: "last24h", gte: last24h },
+    { key: "last7d", gte: last7d },
+    { key: "last30d", gte: last30d },
+  ];
+
+  const queries = windows.flatMap((w) => [
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["relayerAccountId"],
+      where: { blockTimestamp: { gte: w.gte } },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.groupBy({
+      by: ["relayerAccountId"],
+      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
+      _count: { id: true },
+    }),
+    prisma.fastAuthSignEvent.findMany({
+      where: {
+        blockTimestamp: { gte: w.gte },
+        userDerivedPublicKey: { not: null },
+      },
+      distinct: ["relayerAccountId", "userDerivedPublicKey"],
+      select: { relayerAccountId: true },
+    }),
+  ]);
+
+  const results = await Promise.all(queries);
+
+  const allKeys = new Set<string>();
+  const perWindow = new Map<
+    "last24h" | "last7d" | "last30d",
+    Map<string, GuardWindowStats>
+  >();
+
+  windows.forEach((w, i) => {
+    const totalRows = results[i * 3] as Array<{
+      relayerAccountId: string;
+      _count: { id: number };
+    }>;
+    const failedRows = results[i * 3 + 1] as Array<{
+      relayerAccountId: string;
+      _count: { id: number };
+    }>;
+    const distinctRows = results[i * 3 + 2] as Array<{ relayerAccountId: string }>;
+
+    const map = new Map<string, GuardWindowStats>();
+
+    for (const row of totalRows) {
+      allKeys.add(row.relayerAccountId);
+      map.set(row.relayerAccountId, {
+        signed: row._count.id,
+        failed: 0,
+        total: row._count.id,
+        distinctUsers: 0,
+        successRatePct: null,
+      });
+    }
+
+    for (const row of failedRows) {
+      const stats = map.get(row.relayerAccountId);
+      if (stats) {
+        stats.failed = row._count.id;
+        stats.signed = Math.max(0, stats.total - row._count.id);
+      } else {
+        allKeys.add(row.relayerAccountId);
+        map.set(row.relayerAccountId, {
+          signed: 0,
+          failed: row._count.id,
+          total: row._count.id,
+          distinctUsers: 0,
+          successRatePct: null,
+        });
+      }
+    }
+
+    const distinctCounts = new Map<string, number>();
+    for (const row of distinctRows) {
+      distinctCounts.set(
+        row.relayerAccountId,
+        (distinctCounts.get(row.relayerAccountId) ?? 0) + 1,
+      );
+    }
+    for (const [accountId, count] of distinctCounts) {
+      const stats = map.get(accountId);
+      if (stats) {
+        stats.distinctUsers = count;
+      }
+    }
+
+    for (const stats of map.values()) {
+      if (stats.total > 0) {
+        stats.successRatePct = Math.round((stats.signed / stats.total) * 1000) / 10;
+      }
+    }
+
+    perWindow.set(w.key, map);
+  });
+
+  const emptyStats: GuardWindowStats = {
+    signed: 0,
+    failed: 0,
+    total: 0,
+    distinctUsers: 0,
+    successRatePct: null,
+  };
+
+  return [...allKeys]
+    .map((relayerAccountId) => ({
+      relayerAccountId,
+      last24h: perWindow.get("last24h")?.get(relayerAccountId) ?? { ...emptyStats },
+      last7d: perWindow.get("last7d")?.get(relayerAccountId) ?? { ...emptyStats },
+      last30d: perWindow.get("last30d")?.get(relayerAccountId) ?? { ...emptyStats },
+    }))
+    .sort((a, b) => b.last30d.total - a.last30d.total);
+}
+
 async function loadActionTypeBreakdown(
   last24h: Date,
   last7d: Date,
@@ -590,6 +739,124 @@ async function loadConsumerOutcomes(
     LIMIT 10
   `;
 
+  // Per-relayer is a direct group by; per-guard / per-provider need to JOIN
+  // through linked_sign_event_id (so unlinked consumer txs are excluded
+  // from those slices). Each query produces totals + failures per window
+  // in a single round-trip.
+  const relayerRows = await prisma.$queryRaw<
+    Array<{
+      key: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+    }>
+  >`
+    SELECT
+      outer_signer_id AS key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions
+    GROUP BY outer_signer_id
+    ORDER BY total_all DESC
+  `;
+
+  const guardRows = await prisma.$queryRaw<
+    Array<{
+      key: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+    }>
+  >`
+    SELECT
+      se.guard_name AS key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions ct
+    LEFT JOIN fastauth_sign_events se ON se.id = ct.linked_sign_event_id
+    GROUP BY se.guard_name
+    ORDER BY total_all DESC
+  `;
+
+  const actionTypeRows = await prisma.$queryRaw<
+    Array<{
+      key: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+    }>
+  >`
+    SELECT
+      array_to_string(inner_action_types, '+') AS key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions
+    GROUP BY array_to_string(inner_action_types, '+')
+    ORDER BY total_all DESC
+  `;
+
+  const providerRows = await prisma.$queryRaw<
+    Array<{
+      key: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+      failed_all: bigint;
+      failed_30d: bigint;
+      failed_7d: bigint;
+      failed_24h: bigint;
+    }>
+  >`
+    SELECT
+      se.provider_type AS key,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL) AS failed_all,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions ct
+    LEFT JOIN fastauth_sign_events se ON se.id = ct.linked_sign_event_id
+    GROUP BY se.provider_type
+    ORDER BY total_all DESC
+  `;
+
   const buildWindow = (total: bigint, failed: bigint): ConsumerOutcomeWindow => {
     const totalNum = Number(total);
     const failedNum = Number(failed);
@@ -602,6 +869,34 @@ async function loadConsumerOutcomes(
     };
   };
 
+  type GroupRow = {
+    key: string | null;
+    total_all: bigint;
+    total_30d: bigint;
+    total_7d: bigint;
+    total_24h: bigint;
+    failed_all: bigint;
+    failed_30d: bigint;
+    failed_7d: bigint;
+    failed_24h: bigint;
+  };
+
+  const buildGroup = (rows: GroupRow[], unlinkedLabel: string): ConsumerOutcomesGroup[] =>
+    rows.map((row) => ({
+      key: row.key ?? unlinkedLabel,
+      byWindow: {
+        last24h: buildWindow(row.total_24h, row.failed_24h),
+        last7d: buildWindow(row.total_7d, row.failed_7d),
+        last30d: buildWindow(row.total_30d, row.failed_30d),
+        all: buildWindow(row.total_all, row.failed_all),
+      },
+    }));
+
+  const firstConsumer = await prisma.fastAuthConsumerTransaction.findFirst({
+    orderBy: { blockTimestamp: "asc" },
+    select: { blockHeight: true, blockTimestamp: true },
+  });
+
   return {
     byWindow: {
       last24h: buildWindow(windowsRow?.total_24h ?? BigInt(0), windowsRow?.failed_24h ?? BigInt(0)),
@@ -609,6 +904,10 @@ async function loadConsumerOutcomes(
       last30d: buildWindow(windowsRow?.total_30d ?? BigInt(0), windowsRow?.failed_30d ?? BigInt(0)),
       all: buildWindow(windowsRow?.total_all ?? BigInt(0), windowsRow?.failed_all ?? BigInt(0)),
     },
+    byRelayer: buildGroup(relayerRows, "(unknown)"),
+    byGuard: buildGroup(guardRows, "(unlinked)"),
+    byProvider: buildGroup(providerRows, "(unlinked)"),
+    byActionType: buildGroup(actionTypeRows, "(empty)"),
     topFailureReasons: reasonRows.map((r) => ({
       reason: r.reason ?? "(unknown)",
       last24h: Number(r.total_24h),
@@ -616,6 +915,12 @@ async function loadConsumerOutcomes(
       last30d: Number(r.total_30d),
       all: Number(r.total_all),
     })),
+    trackingStartedAt: firstConsumer
+      ? {
+          blockHeight: firstConsumer.blockHeight.toString(),
+          blockTimestamp: firstConsumer.blockTimestamp,
+        }
+      : null,
   };
 }
 
@@ -790,6 +1095,12 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const guardBreakdownPromise = loadGuardBreakdown(last24h, last7d, last30d, failureWhere);
   const providerBreakdownPromise = loadProviderBreakdown(last24h, last7d, last30d, failureWhere);
+  const relayerBreakdownByActivityPromise = loadRelayerBreakdownByActivity(
+    last24h,
+    last7d,
+    last30d,
+    failureWhere,
+  );
   const topAccountsPromise = loadTopAccounts(last24h, last7d, last30d, MAX_TOP_ACCOUNTS);
   const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
   const consumerOutcomesPromise = loadConsumerOutcomes(last24h, last7d, last30d);
@@ -1243,6 +1554,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const guardBreakdown = await guardBreakdownPromise;
   const providerBreakdown = await providerBreakdownPromise;
+  const relayerBreakdownByActivity = await relayerBreakdownByActivityPromise;
   const topAccounts = await topAccountsPromise;
   const actionTypeBreakdown = await actionTypeBreakdownPromise;
   const consumerOutcomes = await consumerOutcomesPromise;
@@ -1251,6 +1563,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     accountsOverview,
     transactionOverview,
     providerBreakdown,
+    relayerBreakdownByActivity,
     guardBreakdown,
     actionTypeBreakdown,
     consumerOutcomes,

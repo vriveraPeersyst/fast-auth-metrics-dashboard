@@ -1,7 +1,9 @@
 import { FastAuthLogo } from "@/components/fastauth-logo";
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
+import { ConsumerOutcomesPanel } from "@/components/consumer-outcomes-panel";
 import { TopAccountsTable } from "@/components/top-accounts-table";
+import { TransactionsPanel } from "@/components/transactions-panel";
 import { UptimeBar } from "@/components/uptime-bar";
 import { getDashboardData } from "@/lib/dashboard-data";
 
@@ -43,21 +45,6 @@ function toStatusLabel(status: "healthy" | "lagging" | "stale" | "no_data"): str
       return "Stale";
     default:
       return "No data";
-  }
-}
-
-function toProviderDisplayName(providerType: string): string {
-  switch (providerType) {
-    case "auth0":
-      return "Auth0";
-    case "firebase":
-      return "Firebase";
-    case "custom_issuer":
-      return "Custom issuer";
-    case "unknown":
-      return "Unknown";
-    default:
-      return providerType;
   }
 }
 
@@ -396,246 +383,23 @@ export default async function Home() {
       <section className="logsPanel">
         <div className="panelTitleRow">
           <h2>Transactions</h2>
-          <p>FastAuth sign-event volume per window.</p>
+          <p>FastAuth sign-event volume per window. Use the tabs to slice by provider, guard, or signed action type.</p>
         </div>
-        <div className="tableWrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Metric</th>
-                <th>24h</th>
-                <th>7d</th>
-                <th>30d</th>
-                <th>All</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Signed</td>
-                <td>{formatNumber(data.transactionOverview.signed.last24h)}</td>
-                <td>{formatNumber(data.transactionOverview.signed.last7d)}</td>
-                <td>{formatNumber(data.transactionOverview.signed.last30d)}</td>
-                <td>{formatNumber(data.transactionOverview.signed.all)}</td>
-              </tr>
-              <tr>
-                <td>Failed</td>
-                <td>{formatNumber(data.transactionOverview.failed.last24h)}</td>
-                <td>{formatNumber(data.transactionOverview.failed.last7d)}</td>
-                <td>{formatNumber(data.transactionOverview.failed.last30d)}</td>
-                <td>{formatNumber(data.transactionOverview.failed.all)}</td>
-              </tr>
-              <tr>
-                <td>Total</td>
-                <td>{formatNumber(data.transactionOverview.total.last24h)}</td>
-                <td>{formatNumber(data.transactionOverview.total.last7d)}</td>
-                <td>{formatNumber(data.transactionOverview.total.last30d)}</td>
-                <td>{formatNumber(data.transactionOverview.total.all)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <TransactionsPanel
+          transactionOverview={data.transactionOverview}
+          relayerBreakdown={data.relayerBreakdownByActivity}
+          providerBreakdown={data.providerBreakdown}
+          guardBreakdown={data.guardBreakdown}
+          actionTypeBreakdown={data.actionTypeBreakdown}
+        />
       </section>
 
       <section className="logsPanel">
         <div className="panelTitleRow">
-          <h2>Activity by provider</h2>
-          <p>Sign events grouped by classified provider type (Auth0 / Firebase / Custom issuer / Unknown).</p>
+          <h2>Consumer transactions</h2>
+          <p>Relayer-submitted txs that consume FastAuth signatures (AddKey, Transfer, FunctionCall, …). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>. Use the tabs to slice by relayer, provider, guard, or action type.</p>
         </div>
-
-        {data.providerBreakdown.length === 0 ? (
-          <p className="emptyState">No FastAuth sign events indexed yet.</p>
-        ) : (
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Provider</th>
-                  <th>Total 24h</th>
-                  <th>Total 7d</th>
-                  <th>Total 30d</th>
-                  <th>Failed 24h</th>
-                  <th>Success 24h</th>
-                  <th>Distinct users 24h</th>
-                  <th>Distinct users 30d</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.providerBreakdown.map((row) => (
-                  <tr key={row.providerType}>
-                    <td>{toProviderDisplayName(row.providerType)}</td>
-                    <td>{formatNumber(row.last24h.total)}</td>
-                    <td>{formatNumber(row.last7d.total)}</td>
-                    <td>{formatNumber(row.last30d.total)}</td>
-                    <td>{formatNumber(row.last24h.failed)}</td>
-                    <td>{formatPercent(row.last24h.successRatePct)}</td>
-                    <td>{formatNumber(row.last24h.distinctUsers)}</td>
-                    <td>{formatNumber(row.last30d.distinctUsers)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Activity by guard</h2>
-          <p>Sign events split by guard name (the part after <code>jwt#</code>) — totals, failures, and distinct users.</p>
-        </div>
-
-        {data.guardBreakdown.length === 0 ? (
-          <p className="emptyState">No FastAuth sign events indexed yet.</p>
-        ) : (
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Guard</th>
-                  <th>Total 24h</th>
-                  <th>Total 7d</th>
-                  <th>Total 30d</th>
-                  <th>Failed 24h</th>
-                  <th>Success 24h</th>
-                  <th>Distinct users 24h</th>
-                  <th>Distinct users 30d</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.guardBreakdown.map((row) => (
-                  <tr key={row.guardName}>
-                    <td>{row.guardName}</td>
-                    <td>{formatNumber(row.last24h.total)}</td>
-                    <td>{formatNumber(row.last7d.total)}</td>
-                    <td>{formatNumber(row.last30d.total)}</td>
-                    <td>{formatNumber(row.last24h.failed)}</td>
-                    <td>{formatPercent(row.last24h.successRatePct)}</td>
-                    <td>{formatNumber(row.last24h.distinctUsers)}</td>
-                    <td>{formatNumber(row.last30d.distinctUsers)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Activity by action type</h2>
-          <p>Sign events split by the first action inside the signed NEP-366 DelegateAction. AddKey/DeleteKey reflect setup &amp; key-rotation flows; FunctionCall/Transfer reflect actual on-chain user activity.</p>
-        </div>
-        {data.actionTypeBreakdown.length === 0 ? (
-          <p className="emptyState">No sign events with parsed action type yet.</p>
-        ) : (
-          <div className="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>24h</th>
-                  <th>7d</th>
-                  <th>30d</th>
-                  <th>All</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.actionTypeBreakdown.map((row) => (
-                  <tr key={row.actionType}>
-                    <td>{row.actionType}</td>
-                    <td>{formatNumber(row.last24h)}</td>
-                    <td>{formatNumber(row.last7d)}</td>
-                    <td>{formatNumber(row.last30d)}</td>
-                    <td>{formatNumber(row.all)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Consumer transaction outcomes</h2>
-          <p>Relayer-submitted txs that consume FastAuth signatures (AddKey, Transfer, FunctionCall, …). Failures here mean the signature reached chain but the action didn&rsquo;t apply — e.g. <code>DelegateActionInvalidSignature</code> or <code>AddKeyAlreadyExists</code>.</p>
-        </div>
-        {data.consumerOutcomes.byWindow.all.total === 0 ? (
-          <p className="emptyState">No consumer transactions indexed yet. The collector will start populating these on its next run after a worker restart.</p>
-        ) : (
-          <>
-            <div className="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Metric</th>
-                    <th>24h</th>
-                    <th>7d</th>
-                    <th>30d</th>
-                    <th>All</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Total</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.total)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.total)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.total)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.total)}</td>
-                  </tr>
-                  <tr>
-                    <td>Succeeded</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.succeeded)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.succeeded)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.succeeded)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.succeeded)}</td>
-                  </tr>
-                  <tr>
-                    <td>Failed</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last24h.failed)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last7d.failed)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.last30d.failed)}</td>
-                    <td>{formatNumber(data.consumerOutcomes.byWindow.all.failed)}</td>
-                  </tr>
-                  <tr>
-                    <td>Success rate</td>
-                    <td>{formatPercent(data.consumerOutcomes.byWindow.last24h.successRatePct)}</td>
-                    <td>{formatPercent(data.consumerOutcomes.byWindow.last7d.successRatePct)}</td>
-                    <td>{formatPercent(data.consumerOutcomes.byWindow.last30d.successRatePct)}</td>
-                    <td>{formatPercent(data.consumerOutcomes.byWindow.all.successRatePct)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {data.consumerOutcomes.topFailureReasons.length > 0 ? (
-              <div className="tableWrap" style={{ marginTop: 16 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Top failure reason</th>
-                      <th>24h</th>
-                      <th>7d</th>
-                      <th>30d</th>
-                      <th>All</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.consumerOutcomes.topFailureReasons.map((row) => (
-                      <tr key={row.reason}>
-                        <td><code>{row.reason}</code></td>
-                        <td>{formatNumber(row.last24h)}</td>
-                        <td>{formatNumber(row.last7d)}</td>
-                        <td>{formatNumber(row.last30d)}</td>
-                        <td>{formatNumber(row.all)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </>
-        )}
+        <ConsumerOutcomesPanel data={data.consumerOutcomes} />
       </section>
 
       <section className="logsPanel">

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "FastAuth Metrics Dashboard",
-  description: "Private peersyst.org FastAuth analytics dashboard",
+  description: "FastAuth : fast-auth.near analytics dashboard",
   icons: {
     icon: "/near-logo.ico",
     shortcut: "/near-logo.ico",
