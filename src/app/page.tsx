@@ -153,6 +153,7 @@ type RecentFailure = {
   blockTimestamp: Date;
   outcome: string;
   failingExecutorId: string | null;
+  failureReason: string | null;
 };
 
 function shortHash(value: string): string {
@@ -177,18 +178,25 @@ function RecentFailuresList({
       ) : (
         rows.map((row) => (
           <div key={row.txHash} className="recentFailuresRow">
-            <span className="failureWhen">
-              <LocalTime iso={row.blockTimestamp} />
-            </span>
-            <span className={`failureKind failureKind--${row.outcome}`}>{row.outcome}</span>
-            <span className="failureExecutor" title={row.failingExecutorId ?? ""}>
-              {row.failingExecutorId ?? "—"}
-            </span>
-            <span className="failureLink">
-              <NearblocksLink kind="tx" value={row.txHash}>
-                {shortHash(row.txHash)}
-              </NearblocksLink>
-            </span>
+            <div className="recentFailuresLine">
+              <span className="failureWhen">
+                <LocalTime iso={row.blockTimestamp} />
+              </span>
+              <span className={`failureKind failureKind--${row.outcome}`}>{row.outcome}</span>
+              <span className="failureExecutor" title={row.failingExecutorId ?? ""}>
+                {row.failingExecutorId ?? "—"}
+              </span>
+              <span className="failureLink">
+                <NearblocksLink kind="tx" value={row.txHash}>
+                  {shortHash(row.txHash)}
+                </NearblocksLink>
+              </span>
+            </div>
+            {row.failureReason ? (
+              <div className="failureReason" title={row.failureReason}>
+                {row.failureReason}
+              </div>
+            ) : null}
           </div>
         ))
       )}

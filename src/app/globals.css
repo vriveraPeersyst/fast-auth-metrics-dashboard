@@ -775,13 +775,27 @@ h3 {
 }
 
 .recentFailuresRow {
+  display: grid;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--color-border-subtle);
+}
+
+.recentFailuresLine {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 4px 0;
-  border-bottom: 1px dashed var(--color-border-subtle);
+}
+
+.failureReason {
+  color: var(--color-ink-subtle);
+  font-size: 11px;
+  margin-left: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .recentFailuresRow:last-child {

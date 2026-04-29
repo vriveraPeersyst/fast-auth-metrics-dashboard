@@ -140,6 +140,7 @@ type ChainHealthFailureRow = {
   blockTimestamp: Date;
   outcome: string;
   failingExecutorId: string | null;
+  failureReason: string | null;
 };
 
 type FastAuthChainHealth = {
@@ -1539,6 +1540,7 @@ async function loadChainHealth(
       blockTimestamp: true,
       outcome: true,
       failingExecutorId: true,
+      failureReason: true,
     },
   });
   const recentMpcFailures = await prisma.fastAuthHealthTx.findMany({
@@ -1550,6 +1552,7 @@ async function loadChainHealth(
       blockTimestamp: true,
       outcome: true,
       failingExecutorId: true,
+      failureReason: true,
     },
   });
 

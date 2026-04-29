@@ -61,6 +61,11 @@ type Classification = {
   outcome: Outcome;
   reachedMpc: boolean | null;
   failingExecutorId: string | null;
+  // Receipt-level error message extracted from the failing receipt's status.
+  // Set on any *_failure outcome; null on success/rpc_pending.
+  failureReason: string | null;
+  // RPC-level error message — only set when the tx RPC call itself failed
+  // (network error, timeout, endpoint exhausted) and we couldn't classify.
   lastError: string | null;
 };
 
@@ -108,6 +113,63 @@ function isFailureStatus(status: unknown): boolean {
   return false;
 }
 
+// Pulls the most-specific human-readable error string out of a NEAR receipt's
+// Failure status. Walks common shapes (ActionError → kind → FunctionCallError
+// → ExecutionError, plus InvalidTxError variants); falls back to a JSON dump
+// of the Failure payload so we never silently drop the reason.
+function extractFailureReason(status: unknown): string | null {
+  if (!status || typeof status !== "object") {
+    return null;
+  }
+  const failure = (status as Record<string, unknown>).Failure;
+  if (failure === undefined || failure === null) {
+    return null;
+  }
+
+  // Walk the most common Failure shape:
+  //   ActionError.kind.{ FunctionCallError.ExecutionError | <variant>: <payload> }
+  //   InvalidTxError.<variant>: <payload>
+  //   Or a top-level string variant.
+  if (typeof failure === "string") {
+    return failure;
+  }
+  if (typeof failure === "object") {
+    const action = (failure as Record<string, unknown>).ActionError;
+    if (action && typeof action === "object") {
+      const kind = (action as Record<string, unknown>).kind;
+      if (typeof kind === "string") return kind;
+      if (kind && typeof kind === "object") {
+        const kindEntries = Object.entries(kind as Record<string, unknown>);
+        if (kindEntries.length > 0) {
+          const [kindName, kindPayload] = kindEntries[0];
+          if (kindName === "FunctionCallError" && kindPayload && typeof kindPayload === "object") {
+            const fnEntries = Object.entries(kindPayload as Record<string, unknown>);
+            if (fnEntries.length > 0) {
+              const [fnVariant, fnMsg] = fnEntries[0];
+              if (typeof fnMsg === "string") return fnMsg;
+              return `${fnVariant}: ${JSON.stringify(fnMsg)}`;
+            }
+          }
+          if (typeof kindPayload === "string") return `${kindName}: ${kindPayload}`;
+          return `${kindName}: ${JSON.stringify(kindPayload)}`;
+        }
+      }
+    }
+    const invalidTx = (failure as Record<string, unknown>).InvalidTxError;
+    if (invalidTx) {
+      if (typeof invalidTx === "string") return `InvalidTxError: ${invalidTx}`;
+      return `InvalidTxError: ${JSON.stringify(invalidTx)}`;
+    }
+  }
+
+  // Unknown shape — preserve everything so we can post-mortem it later.
+  try {
+    return JSON.stringify(failure);
+  } catch {
+    return null;
+  }
+}
+
 async function runWithConcurrency<T>(
   items: readonly T[],
   concurrency: number,
@@ -152,6 +214,7 @@ async function classifyTx(
       outcome: "rpc_pending",
       reachedMpc: null,
       failingExecutorId: null,
+      failureReason: null,
       lastError: error instanceof Error ? error.message : String(error),
     };
   }
@@ -159,6 +222,7 @@ async function classifyTx(
   const receipts = txStatus.result?.receipts_outcome ?? [];
   let reachedMpc = false;
   let firstFailingExecutor: string | null = null;
+  let firstFailingStatus: unknown = null;
 
   for (const receipt of receipts) {
     const executor =
@@ -171,12 +235,12 @@ async function classifyTx(
       isFailureStatus(receipt.outcome?.status)
     ) {
       firstFailingExecutor = executor;
+      firstFailingStatus = receipt.outcome?.status;
     }
   }
 
-  const txConversionFailed = isFailureStatus(
-    txStatus.result?.transaction_outcome?.outcome?.status,
-  );
+  const txConversionStatus = txStatus.result?.transaction_outcome?.outcome?.status;
+  const txConversionFailed = isFailureStatus(txConversionStatus);
   const anyFailure = firstFailingExecutor !== null || txConversionFailed;
 
   if (!anyFailure) {
@@ -184,11 +248,18 @@ async function classifyTx(
       outcome: "success",
       reachedMpc,
       failingExecutorId: null,
+      failureReason: null,
       lastError: null,
     };
   }
 
-  // Failure attribution. Mirrors the old prober's logic:
+  // Pick the most informative failure source: the failing receipt's status
+  // if any, otherwise the conversion-level failure.
+  const failureReason =
+    extractFailureReason(firstFailingStatus) ??
+    extractFailureReason(txConversionStatus);
+
+  // Failure attribution:
   //   - failing executor in MPC set        -> mpc_failure
   //   - reached MPC but failure elsewhere  -> other_failure
   //   - everything else (incl. !reachedMpc and FA / router / guard executors)
@@ -198,6 +269,7 @@ async function classifyTx(
       outcome: "mpc_failure",
       reachedMpc: true,
       failingExecutorId: firstFailingExecutor,
+      failureReason,
       lastError: null,
     };
   }
@@ -207,6 +279,7 @@ async function classifyTx(
       outcome: "other_failure",
       reachedMpc: true,
       failingExecutorId: firstFailingExecutor,
+      failureReason,
       lastError: null,
     };
   }
@@ -218,6 +291,7 @@ async function classifyTx(
     outcome: "guard_failure",
     reachedMpc,
     failingExecutorId: firstFailingExecutor,
+    failureReason,
     lastError: null,
   };
 }
@@ -303,6 +377,7 @@ export async function collectFastAuthHealth(
         reachedMpc: row.reachedMpc,
         outcome: row.outcome,
         failingExecutorId: row.failingExecutorId,
+        failureReason: row.failureReason,
         retryCount: row.outcome === "rpc_pending" ? 1 : 0,
         lastAttemptedAt: now,
         lastError: row.lastError,
@@ -362,6 +437,7 @@ export async function collectFastAuthHealth(
             reachedMpc: result.reachedMpc,
             outcome: result.outcome,
             failingExecutorId: result.failingExecutorId,
+            failureReason: result.failureReason,
             retryCount: { increment: 1 },
             lastAttemptedAt: now,
             lastError: result.lastError,

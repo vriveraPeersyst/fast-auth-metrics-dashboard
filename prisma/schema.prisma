@@ -288,6 +288,9 @@ model FastAuthHealthTx {
   reachedMpc        Boolean?  @map("reached_mpc")
   outcome           String
   failingExecutorId String?   @map("failing_executor_id")
+  // Receipt-level failure payload (e.g. "Smart contract panicked: Request
+  // has timed out."). Set on any *_failure outcome, null otherwise.
+  failureReason     String?   @map("failure_reason")
   retryCount        Int       @default(0) @map("retry_count")
   lastAttemptedAt   DateTime? @map("last_attempted_at")
   lastError         String?   @map("last_error")
