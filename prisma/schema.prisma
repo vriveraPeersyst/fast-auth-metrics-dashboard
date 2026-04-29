@@ -54,6 +54,7 @@ model NearTransaction {
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@index([blockHeight])
+  @@index([receiverId, blockHeight])
   @@map("near_transactions")
 }
 
@@ -255,6 +256,48 @@ model IndexerCheckpoint {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("indexer_checkpoints")
+}
+
+// Per-tx receipt-level classification of every FastAuth-touching tx, used by
+// the MPC Status / Fast Auth Status cards and the Transactions panel's
+// Failed/Pending counts. Sourced from near_transactions (no extra block walk
+// required), populated by collectFastAuthHealth via the NEAR `tx` RPC. Rows
+// are mutable: rpc_pending entries get retried until classified or until
+// retry_count hits the cap, at which point they freeze as rpc_pending — we
+// never lie about an unconfirmed outcome by promoting it to other_failure.
+//
+// outcome: success | guard_failure | mpc_failure | other_failure | rpc_pending
+//   - success         : every receipt succeeded
+//   - guard_failure   : failure happened in FastAuth contract, JwtGuardRouter,
+//                       or a specific guard (Auth0Guard etc.) — i.e. before
+//                       any receipt with the MPC contract as executor
+//   - mpc_failure     : a receipt whose executor is the MPC contract failed
+//   - other_failure   : reached MPC but failure was elsewhere (callback etc.)
+//   - rpc_pending     : tx RPC has not yet returned a usable status
+//
+// failingExecutorId is set on any *_failure outcome to the account_id of the
+// failing receipt's executor. Lets us slice "guard failures by guard" later
+// (Auth0 vs Firebase vs Custom) without re-classifying.
+model FastAuthHealthTx {
+  txHash            String    @id @map("tx_hash")
+  signerId          String    @map("signer_id")
+  blockHeight       BigInt    @map("block_height")
+  blockTimestamp    DateTime  @map("block_timestamp")
+  // Nullable because for rpc_pending rows we genuinely don't know yet.
+  // Once classified, true if any receipt's executor was the MPC contract.
+  reachedMpc        Boolean?  @map("reached_mpc")
+  outcome           String
+  failingExecutorId String?   @map("failing_executor_id")
+  retryCount        Int       @default(0) @map("retry_count")
+  lastAttemptedAt   DateTime? @map("last_attempted_at")
+  lastError         String?   @map("last_error")
+  classifiedAt      DateTime? @map("classified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp, outcome])
+  @@index([outcome, lastAttemptedAt])
+  @@map("fastauth_health_tx")
 }
 
 model FastAuthChainHealthSnapshot {

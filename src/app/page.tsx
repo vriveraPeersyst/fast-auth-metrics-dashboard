@@ -148,6 +148,54 @@ function formatPercent(value: number | null): string {
   return `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 }
 
+type RecentFailure = {
+  txHash: string;
+  blockTimestamp: Date;
+  outcome: string;
+  failingExecutorId: string | null;
+};
+
+function shortHash(value: string): string {
+  if (value.length <= 14) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function RecentFailuresList({
+  rows,
+  heading,
+  emptyText,
+}: {
+  rows: RecentFailure[];
+  heading: string;
+  emptyText: string;
+}) {
+  return (
+    <div className="recentFailuresList">
+      <div className="recentFailuresHeader">{heading}</div>
+      {rows.length === 0 ? (
+        <p className="recentFailuresEmpty">{emptyText}</p>
+      ) : (
+        rows.map((row) => (
+          <div key={row.txHash} className="recentFailuresRow">
+            <span className="failureWhen">
+              <LocalTime iso={row.blockTimestamp} />
+            </span>
+            <span className={`failureKind failureKind--${row.outcome}`}>{row.outcome}</span>
+            <span className="failureExecutor" title={row.failingExecutorId ?? ""}>
+              {row.failingExecutorId ?? "—"}
+            </span>
+            <span className="failureLink">
+              <NearblocksLink kind="tx" value={row.txHash}>
+                {shortHash(row.txHash)}
+              </NearblocksLink>
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default async function Home() {
   const data = await getDashboardData();
 
@@ -230,7 +278,19 @@ export default async function Home() {
               <dd>{data.mpcChainHealth?.successfulTransactions ?? "-"}</dd>
             </div>
             <div>
-              <dt>Probed at</dt>
+              <dt>RPC pending</dt>
+              <dd>
+                {data.mpcChainHealth?.rpcPendingTransactions ?? "-"}
+                {data.mpcChainHealth && data.mpcChainHealth.rpcPendingTransactions > 0 ? (
+                  <>
+                    {" "}
+                    <span className="healthMetaHint">(awaiting classification — will retry)</span>
+                  </>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt>Computed at</dt>
               <dd>
                 <LocalTime iso={data.mpcChainHealth?.computedAt ?? null} />
               </dd>
@@ -241,8 +301,14 @@ export default async function Home() {
 
           <p className="healthDetails">
             Success rate of MPC signing receipts. Excludes guard-side rejections to isolate MPC
-            network health.
+            network health. Pending tx are excluded from the denominator until classified.
           </p>
+
+          <RecentFailuresList
+            heading="Recent MPC failures"
+            rows={data.mpcChainHealth?.recentFailures ?? []}
+            emptyText="No MPC failures recorded yet."
+          />
         </article>
 
         <article className="healthCard">
@@ -291,7 +357,8 @@ export default async function Home() {
               <dd>
                 {data.fastAuthChainHealth
                   ? `${data.fastAuthChainHealth.successfulTransactions} ok / ` +
-                    `${data.fastAuthChainHealth.failedTransactions} failed ` +
+                    `${data.fastAuthChainHealth.failedTransactions} failed / ` +
+                    `${data.fastAuthChainHealth.rpcPendingTransactions} pending ` +
                     `(${data.fastAuthChainHealth.totalTransactions} total)`
                   : "-"}
               </dd>
@@ -299,6 +366,19 @@ export default async function Home() {
             <div>
               <dt>Guard-side failures</dt>
               <dd>{data.fastAuthChainHealth?.guardFailedTransactions ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>RPC pending</dt>
+              <dd>
+                {data.fastAuthChainHealth?.rpcPendingTransactions ?? "-"}
+                {data.fastAuthChainHealth &&
+                data.fastAuthChainHealth.rpcPendingTransactions > 0 ? (
+                  <>
+                    {" "}
+                    <span className="healthMetaHint">(awaiting classification — will retry)</span>
+                  </>
+                ) : null}
+              </dd>
             </div>
             <div>
               <dt>Last success</dt>
@@ -324,7 +404,7 @@ export default async function Home() {
               </dd>
             </div>
             <div>
-              <dt>Probed at</dt>
+              <dt>Computed at</dt>
               <dd>
                 <LocalTime iso={data.fastAuthChainHealth?.computedAt ?? null} />
               </dd>
@@ -334,9 +414,16 @@ export default async function Home() {
           <UptimeBar label="Last 24h" points={fastAuthUptimePoints} />
 
           <p className="healthDetails">
-            Live probe of the last {data.fastAuthChainHealth?.windowBlocks ?? "~"} blocks. Share of
-            FastAuth txs whose full receipt chain (guard, MPC, callback) executed cleanly.
+            Last 24h of FastAuth txs, classified by walking each tx&rsquo;s receipts. Share whose
+            full receipt chain (guard → MPC) executed cleanly. Pending tx are excluded from the
+            denominator until classified.
           </p>
+
+          <RecentFailuresList
+            heading="Recent failures"
+            rows={data.fastAuthChainHealth?.recentFailures ?? []}
+            emptyText="No failures recorded yet."
+          />
         </article>
       </section>
 

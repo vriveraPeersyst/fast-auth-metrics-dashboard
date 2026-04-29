@@ -29,13 +29,28 @@ function classify(point: Point): SegmentStatus {
   return "stale";
 }
 
+// Each bin covers this many minutes — must stay in sync with the date_bin
+// interval in loadChainHealth. Used to convert "bins with data" into a human
+// duration ("1h 45m covered") and to label the tooltip's bin window.
+const BIN_MINUTES = 15;
+
 function formatAbsolute(date: Date): string {
   return date.toLocaleString("en-US", {
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
     month: "short",
     day: "numeric",
+    hour12: false,
   });
+}
+
+function formatCoveredDuration(binsWithData: number): string {
+  const totalMinutes = binsWithData * BIN_MINUTES;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m covered`;
+  if (minutes === 0) return `${hours}h covered`;
+  return `${hours}h ${minutes}m covered`;
 }
 
 function summarize(points: Point[]): {
@@ -73,9 +88,9 @@ function summarize(points: Point[]): {
   return { uptimePct, healthy, lagging, stale, noData };
 }
 
-export function UptimeBar({ label, points, emptyText = "No probes recorded in the last 24h." }: UptimeBarProps) {
+export function UptimeBar({ label, points, emptyText = "No data for the last 24h yet." }: UptimeBarProps) {
   const summary = summarize(points);
-  const probedCount = summary.healthy + summary.lagging + summary.stale;
+  const binsWithData = summary.healthy + summary.lagging + summary.stale;
 
   return (
     <div className="statusUptime">
@@ -87,8 +102,8 @@ export function UptimeBar({ label, points, emptyText = "No probes recorded in th
             : `${summary.uptimePct.toLocaleString("en-US", { maximumFractionDigits: 1 })}% uptime`}
           <span className="statusUptimeHint">
             {" · "}
-            {probedCount} probe{probedCount === 1 ? "" : "s"} with data
-            {summary.noData > 0 ? ` · ${summary.noData} no-data` : ""}
+            {formatCoveredDuration(binsWithData)}
+            {summary.noData > 0 ? ` · ${summary.noData} idle bin${summary.noData === 1 ? "" : "s"}` : ""}
           </span>
         </span>
       </div>
@@ -96,21 +111,50 @@ export function UptimeBar({ label, points, emptyText = "No probes recorded in th
       {points.length === 0 ? (
         <p className="statusUptimeEmpty">{emptyText}</p>
       ) : (
-        <div className="statusUptimeTrack" role="img" aria-label={`${label} uptime — last 24h`}>
-          {points.map((p, i) => {
-            const status = classify(p);
-            const successText =
-              p.successRatePct === null
-                ? "no data"
-                : `${p.successRatePct.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
-            return (
-              <span
-                key={`${p.computedAt.getTime()}-${i}`}
-                className={`statusUptimeSegment statusUptimeSegment--${status}`}
-                title={`${formatAbsolute(p.computedAt)} · ${successText} (${p.attempted} attempts)`}
-              />
-            );
-          })}
+        <div className="statusUptimeTrackWrap" tabIndex={0}>
+          <div className="statusUptimeTrack" role="img" aria-label={`${label} uptime — last 24h`}>
+            {points.map((p, i) => {
+              const status = classify(p);
+              const successText =
+                p.successRatePct === null
+                  ? "no data"
+                  : `${p.successRatePct.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
+              const binEnd = new Date(p.computedAt.getTime() + BIN_MINUTES * 60_000);
+              const window = `${formatAbsolute(p.computedAt)}–${binEnd.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+              return (
+                <span
+                  key={`${p.computedAt.getTime()}-${i}`}
+                  className={`statusUptimeSegment statusUptimeSegment--${status}`}
+                  title={`${window} · ${successText} (${p.attempted} attempts)`}
+                />
+              );
+            })}
+          </div>
+          <div className="statusUptimeLegend" role="tooltip">
+            <strong>Legend ({BIN_MINUTES}-min bins)</strong>
+            <ul>
+              <li>
+                <span className="legendSwatch statusUptimeSegment--healthy" />
+                Healthy: ≥98% success
+              </li>
+              <li>
+                <span className="legendSwatch statusUptimeSegment--lagging" />
+                Lagging: 90–98% success
+              </li>
+              <li>
+                <span className="legendSwatch statusUptimeSegment--stale" />
+                Stale: &lt;90% success
+              </li>
+              <li>
+                <span className="legendSwatch statusUptimeSegment--no_data" />
+                Idle: no FastAuth tx in this window
+              </li>
+            </ul>
+            <p>
+              Pending tx (awaiting receipt classification) are excluded from the success-rate
+              calculation, so a bin where everything is still pending renders as idle, not stale.
+            </p>
+          </div>
         </div>
       )}
     </div>

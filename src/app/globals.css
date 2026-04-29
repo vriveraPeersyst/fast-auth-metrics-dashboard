@@ -685,6 +685,144 @@ h3 {
   padding: 8px 0;
 }
 
+.statusUptimeTrackWrap {
+  position: relative;
+}
+
+.statusUptimeLegend {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.statusUptimeTrackWrap:hover .statusUptimeLegend,
+.statusUptimeTrackWrap:focus-within .statusUptimeLegend {
+  opacity: 1;
+  visibility: visible;
+}
+
+.statusUptimeLegend strong {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+  margin-bottom: 6px;
+}
+
+.statusUptimeLegend ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.statusUptimeLegend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusUptimeLegend .legendSwatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.statusUptimeLegend p {
+  margin: 8px 0 0;
+  color: var(--color-ink-subtle);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.recentFailuresList {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.recentFailuresHeader {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+  font-weight: 700;
+}
+
+.recentFailuresEmpty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-subtle);
+}
+
+.recentFailuresRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--color-border-subtle);
+}
+
+.recentFailuresRow:last-child {
+  border-bottom: none;
+}
+
+.recentFailuresRow .failureWhen {
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+}
+
+.recentFailuresRow .failureKind {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.recentFailuresRow .failureKind--guard_failure {
+  color: var(--color-status-warn);
+}
+
+.recentFailuresRow .failureKind--mpc_failure {
+  color: var(--color-status-err);
+}
+
+.recentFailuresRow .failureKind--other_failure {
+  color: var(--color-ink-subtle);
+}
+
+.recentFailuresRow .failureExecutor {
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.recentFailuresRow .failureLink {
+  margin-left: auto;
+}
+
 /* Tables */
 .tableWrap {
   overflow-x: auto;

@@ -30,6 +30,11 @@ type AggregateAccountsMetrics = {
 type TransactionMetrics = {
   signed: TimeWindowMetrics;
   failed: TimeWindowMetrics;
+  // Sign events whose tx is in fastauth_health_tx with outcome = rpc_pending —
+  // i.e. we haven't yet been able to walk receipts to know the real outcome.
+  // Shown as its own row in the Transactions panel; not counted as success or
+  // failure. Self-resolves as the health collector retries.
+  pending: TimeWindowMetrics;
   total: TimeWindowMetrics;
 };
 
@@ -130,6 +135,13 @@ type MissingBlockRange = {
   completedDownTo: number | null;
 };
 
+type ChainHealthFailureRow = {
+  txHash: string;
+  blockTimestamp: Date;
+  outcome: string;
+  failingExecutorId: string | null;
+};
+
 type FastAuthChainHealth = {
   computedAt: Date;
   chainHead: string;
@@ -140,11 +152,16 @@ type FastAuthChainHealth = {
   successfulTransactions: number;
   failedTransactions: number;
   guardFailedTransactions: number;
+  // Tx awaiting receipt-level classification (rpc_pending). Excluded from the
+  // success-rate denominator — pending isn't success or failure.
+  rpcPendingTransactions: number;
   successRatePct: number | null;
   distinctRelayers: number;
   lastSuccessTimestamp: Date | null;
   lastSuccessTxHash: string | null;
   minutesSinceLastSuccess: number | null;
+  // Most recent failures across guard / mpc / other, for at-a-glance triage.
+  recentFailures: ChainHealthFailureRow[];
 };
 
 type MpcChainHealth = {
@@ -152,7 +169,10 @@ type MpcChainHealth = {
   attemptedTransactions: number;
   failedTransactions: number;
   successfulTransactions: number;
+  rpcPendingTransactions: number;
   successRatePct: number | null;
+  // Most recent mpc_failure rows (a subset of FastAuthChainHealth.recentFailures).
+  recentFailures: ChainHealthFailureRow[];
 };
 
 type ChainHealthHistoryPoint = {
@@ -347,7 +367,6 @@ async function loadGuardBreakdown(
   last24h: Date,
   last7d: Date,
   last30d: Date,
-  failureWhere: object,
 ): Promise<GuardBreakdownItem[]> {
   const windows: Array<{ key: "last24h" | "last7d" | "last30d"; gte: Date }> = [
     { key: "last24h", gte: last24h },
@@ -361,11 +380,7 @@ async function loadGuardBreakdown(
       where: { blockTimestamp: { gte: w.gte } },
       _count: { id: true },
     }),
-    prisma.fastAuthSignEvent.groupBy({
-      by: ["guardName"],
-      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
-      _count: { id: true },
-    }),
+    loadSignFailedByDimension("guard_name", w.gte),
     prisma.fastAuthSignEvent.findMany({
       where: {
         blockTimestamp: { gte: w.gte },
@@ -394,10 +409,7 @@ async function loadGuardBreakdown(
       guardName: string | null;
       _count: { id: number };
     }>;
-    const failedRows = results[i * 3 + 1] as Array<{
-      guardName: string | null;
-      _count: { id: number };
-    }>;
+    const failedMap = results[i * 3 + 1] as Map<string | null, number>;
     const distinctRows = results[i * 3 + 2] as Array<{ guardName: string | null }>;
 
     const map = new Map<string, GuardWindowStats>();
@@ -414,18 +426,18 @@ async function loadGuardBreakdown(
       });
     }
 
-    for (const row of failedRows) {
-      const key = toKey(row.guardName);
+    for (const [rawKey, count] of failedMap) {
+      const key = toKey(rawKey);
       const stats = map.get(key);
       if (stats) {
-        stats.failed = row._count.id;
-        stats.signed = Math.max(0, stats.total - row._count.id);
+        stats.failed = count;
+        stats.signed = Math.max(0, stats.total - count);
       } else {
         allKeys.add(key);
         map.set(key, {
           signed: 0,
-          failed: row._count.id,
-          total: row._count.id,
+          failed: count,
+          total: count,
           distinctUsers: 0,
           successRatePct: null,
         });
@@ -475,7 +487,6 @@ async function loadProviderBreakdown(
   last24h: Date,
   last7d: Date,
   last30d: Date,
-  failureWhere: object,
 ): Promise<ProviderBreakdownItem[]> {
   const windows: Array<{ key: "last24h" | "last7d" | "last30d"; gte: Date }> = [
     { key: "last24h", gte: last24h },
@@ -489,11 +500,7 @@ async function loadProviderBreakdown(
       where: { blockTimestamp: { gte: w.gte } },
       _count: { id: true },
     }),
-    prisma.fastAuthSignEvent.groupBy({
-      by: ["providerType"],
-      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
-      _count: { id: true },
-    }),
+    loadSignFailedByDimension("provider_type", w.gte),
     prisma.fastAuthSignEvent.findMany({
       where: {
         blockTimestamp: { gte: w.gte },
@@ -517,10 +524,7 @@ async function loadProviderBreakdown(
       providerType: string;
       _count: { id: number };
     }>;
-    const failedRows = results[i * 3 + 1] as Array<{
-      providerType: string;
-      _count: { id: number };
-    }>;
+    const failedMap = results[i * 3 + 1] as Map<string | null, number>;
     const distinctRows = results[i * 3 + 2] as Array<{ providerType: string }>;
 
     const map = new Map<string, GuardWindowStats>();
@@ -536,17 +540,21 @@ async function loadProviderBreakdown(
       });
     }
 
-    for (const row of failedRows) {
-      const stats = map.get(row.providerType);
+    for (const [rawKey, count] of failedMap) {
+      // provider_type is non-nullable in fastauth_sign_events; the join will
+      // never yield null for this dimension, but the helper's signature is
+      // generic so coerce defensively.
+      if (rawKey === null) continue;
+      const stats = map.get(rawKey);
       if (stats) {
-        stats.failed = row._count.id;
-        stats.signed = Math.max(0, stats.total - row._count.id);
+        stats.failed = count;
+        stats.signed = Math.max(0, stats.total - count);
       } else {
-        allKeys.add(row.providerType);
-        map.set(row.providerType, {
+        allKeys.add(rawKey);
+        map.set(rawKey, {
           signed: 0,
-          failed: row._count.id,
-          total: row._count.id,
+          failed: count,
+          total: count,
           distinctUsers: 0,
           successRatePct: null,
         });
@@ -595,7 +603,6 @@ async function loadRelayerBreakdownByActivity(
   last24h: Date,
   last7d: Date,
   last30d: Date,
-  failureWhere: object,
 ): Promise<RelayerActivityItem[]> {
   // Same shape as loadProviderBreakdown but grouped by the relayer account
   // that called fast-auth.near.sign() (sign event signer). Today there's
@@ -612,11 +619,7 @@ async function loadRelayerBreakdownByActivity(
       where: { blockTimestamp: { gte: w.gte } },
       _count: { id: true },
     }),
-    prisma.fastAuthSignEvent.groupBy({
-      by: ["relayerAccountId"],
-      where: { blockTimestamp: { gte: w.gte }, ...failureWhere },
-      _count: { id: true },
-    }),
+    loadSignFailedByDimension("relayer_account_id", w.gte),
     prisma.fastAuthSignEvent.findMany({
       where: {
         blockTimestamp: { gte: w.gte },
@@ -640,10 +643,7 @@ async function loadRelayerBreakdownByActivity(
       relayerAccountId: string;
       _count: { id: number };
     }>;
-    const failedRows = results[i * 3 + 1] as Array<{
-      relayerAccountId: string;
-      _count: { id: number };
-    }>;
+    const failedMap = results[i * 3 + 1] as Map<string | null, number>;
     const distinctRows = results[i * 3 + 2] as Array<{ relayerAccountId: string }>;
 
     const map = new Map<string, GuardWindowStats>();
@@ -659,17 +659,19 @@ async function loadRelayerBreakdownByActivity(
       });
     }
 
-    for (const row of failedRows) {
-      const stats = map.get(row.relayerAccountId);
+    for (const [rawKey, count] of failedMap) {
+      // relayer_account_id is non-nullable in fastauth_sign_events.
+      if (rawKey === null) continue;
+      const stats = map.get(rawKey);
       if (stats) {
-        stats.failed = row._count.id;
-        stats.signed = Math.max(0, stats.total - row._count.id);
+        stats.failed = count;
+        stats.signed = Math.max(0, stats.total - count);
       } else {
-        allKeys.add(row.relayerAccountId);
-        map.set(row.relayerAccountId, {
+        allKeys.add(rawKey);
+        map.set(rawKey, {
           signed: 0,
-          failed: row._count.id,
-          total: row._count.id,
+          failed: count,
+          total: count,
           distinctUsers: 0,
           successRatePct: null,
         });
@@ -1395,6 +1397,293 @@ async function loadMissingBlockRanges(): Promise<MissingBlockRange[]> {
   });
 }
 
+type SignOutcomeCounts = {
+  failed24h: number;
+  failed7d: number;
+  failed30d: number;
+  failedAll: number;
+  pending24h: number;
+  pending7d: number;
+  pending30d: number;
+  pendingAll: number;
+};
+
+// Per-window counts of sign events whose underlying tx is classified as a
+// failure or as still rpc_pending in fastauth_health_tx. Inner-joins drop
+// sign events without a health row — those count as "signed" by exclusion,
+// which is correct: until classified, we don't know if they failed.
+async function loadSignOutcomeCounts(
+  last24h: Date,
+  last7d: Date,
+  last30d: Date,
+): Promise<SignOutcomeCounts> {
+  const [row] = await prisma.$queryRaw<
+    Array<{
+      failed_24h: bigint;
+      failed_7d: bigint;
+      failed_30d: bigint;
+      failed_all: bigint;
+      pending_24h: bigint;
+      pending_7d: bigint;
+      pending_30d: bigint;
+      pending_all: bigint;
+    }>
+  >`
+    SELECT
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last24h} AND h.outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed_24h,
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last7d}  AND h.outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed_7d,
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last30d} AND h.outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed_all,
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last24h} AND h.outcome = 'rpc_pending') AS pending_24h,
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last7d}  AND h.outcome = 'rpc_pending') AS pending_7d,
+      COUNT(*) FILTER (WHERE se.block_timestamp >= ${last30d} AND h.outcome = 'rpc_pending') AS pending_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'rpc_pending') AS pending_all
+    FROM fastauth_sign_events se
+    INNER JOIN fastauth_health_tx h ON h.tx_hash = se.tx_hash
+  `;
+  return {
+    failed24h: Number(row?.failed_24h ?? BigInt(0)),
+    failed7d: Number(row?.failed_7d ?? BigInt(0)),
+    failed30d: Number(row?.failed_30d ?? BigInt(0)),
+    failedAll: Number(row?.failed_all ?? BigInt(0)),
+    pending24h: Number(row?.pending_24h ?? BigInt(0)),
+    pending7d: Number(row?.pending_7d ?? BigInt(0)),
+    pending30d: Number(row?.pending_30d ?? BigInt(0)),
+    pendingAll: Number(row?.pending_all ?? BigInt(0)),
+  };
+}
+
+// Per-dimension failed sign-event counts via JOIN to fastauth_health_tx.
+// Used by the guard / provider / relayer breakdowns to surface accurate
+// "failed" columns sourced from the per-tx classifier rather than the
+// chunk-level executionStatus.
+async function loadSignFailedByDimension(
+  dimensionColumn: "guard_name" | "provider_type" | "relayer_account_id",
+  since: Date,
+): Promise<Map<string | null, number>> {
+  const rows = await prisma.$queryRaw<
+    Array<{ key: string | null; cnt: bigint }>
+  >`
+    SELECT se.${Prisma.raw(dimensionColumn)} AS key, COUNT(*) AS cnt
+    FROM fastauth_sign_events se
+    INNER JOIN fastauth_health_tx h ON h.tx_hash = se.tx_hash
+    WHERE se.block_timestamp >= ${since}
+      AND h.outcome IN ('guard_failure','mpc_failure','other_failure')
+    GROUP BY se.${Prisma.raw(dimensionColumn)}
+  `;
+  const result = new Map<string | null, number>();
+  for (const row of rows) {
+    result.set(row.key, Number(row.cnt));
+  }
+  return result;
+}
+
+async function loadChainHealth(
+  now: Date,
+  last24h: Date,
+): Promise<{
+  fastAuthChainHealth: FastAuthChainHealth | null;
+  mpcChainHealth: MpcChainHealth | null;
+  chainHealthHistory: ChainHealthHistoryPoint[];
+}> {
+  const [aggRow] = await prisma.$queryRaw<
+    Array<{
+      total: bigint;
+      succeeded: bigint;
+      failed: bigint;
+      guard_failed: bigint;
+      mpc_failed: bigint;
+      pending: bigint;
+      mpc_attempted: bigint;
+      min_block_height: bigint | null;
+      max_block_height: bigint | null;
+      distinct_relayers: bigint;
+    }>
+  >`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE outcome = 'success') AS succeeded,
+      COUNT(*) FILTER (WHERE outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed,
+      COUNT(*) FILTER (WHERE outcome = 'guard_failure') AS guard_failed,
+      COUNT(*) FILTER (WHERE outcome = 'mpc_failure') AS mpc_failed,
+      COUNT(*) FILTER (WHERE outcome = 'rpc_pending') AS pending,
+      COUNT(*) FILTER (WHERE reached_mpc = true) AS mpc_attempted,
+      MIN(block_height) AS min_block_height,
+      MAX(block_height) AS max_block_height,
+      COUNT(DISTINCT signer_id) AS distinct_relayers
+    FROM fastauth_health_tx
+    WHERE block_timestamp >= ${last24h}
+  `;
+
+  // Last successful tx, all-time. Lets the Fast Auth status card surface
+  // "minutes since last success" even if the 24h window is dry.
+  const [lastSuccess] = await prisma.$queryRaw<
+    Array<{ block_timestamp: Date; tx_hash: string }>
+  >`
+    SELECT block_timestamp, tx_hash
+    FROM fastauth_health_tx
+    WHERE outcome = 'success'
+    ORDER BY block_timestamp DESC
+    LIMIT 1
+  `;
+
+  // Last 5 failures across all classes (guard / mpc / other) for triage.
+  // Not bounded by the 24h window — if it's been quiet, we still want to
+  // show the most recent failures regardless of age.
+  const recentFastAuthFailures = await prisma.fastAuthHealthTx.findMany({
+    where: { outcome: { in: ["guard_failure", "mpc_failure", "other_failure"] } },
+    orderBy: { blockTimestamp: "desc" },
+    take: 5,
+    select: {
+      txHash: true,
+      blockTimestamp: true,
+      outcome: true,
+      failingExecutorId: true,
+    },
+  });
+  const recentMpcFailures = await prisma.fastAuthHealthTx.findMany({
+    where: { outcome: "mpc_failure" },
+    orderBy: { blockTimestamp: "desc" },
+    take: 5,
+    select: {
+      txHash: true,
+      blockTimestamp: true,
+      outcome: true,
+      failingExecutorId: true,
+    },
+  });
+
+  // 15-minute bins padded with generate_series so the sparkline always has
+  // exactly 96 segments per 24h. Empty bins (no FA traffic) come back with
+  // total = 0 and render as "idle" in the bar — distinct from healthy/failed.
+  // date_bin (Postgres 14+) snaps to the reference epoch for stable boundaries
+  // independent of when "now" is.
+  const historyRows = await prisma.$queryRaw<
+    Array<{
+      bucket: Date;
+      total: bigint;
+      classified: bigint;
+      succeeded: bigint;
+      failed: bigint;
+      mpc_attempted: bigint;
+      mpc_failed: bigint;
+    }>
+  >`
+    WITH bins AS (
+      SELECT generate_series(
+        date_bin('15 minutes', ${last24h}::timestamp, TIMESTAMP '2000-01-01'),
+        date_bin('15 minutes', NOW()::timestamp, TIMESTAMP '2000-01-01'),
+        interval '15 minutes'
+      ) AS bucket
+    )
+    SELECT
+      b.bucket,
+      COUNT(h.tx_hash) AS total,
+      COUNT(h.tx_hash) FILTER (WHERE h.outcome != 'rpc_pending') AS classified,
+      COUNT(h.tx_hash) FILTER (WHERE h.outcome = 'success') AS succeeded,
+      COUNT(h.tx_hash) FILTER (WHERE h.outcome IN ('guard_failure','mpc_failure','other_failure')) AS failed,
+      COUNT(h.tx_hash) FILTER (WHERE h.reached_mpc = true) AS mpc_attempted,
+      COUNT(h.tx_hash) FILTER (WHERE h.outcome = 'mpc_failure') AS mpc_failed
+    FROM bins b
+    LEFT JOIN fastauth_health_tx h
+      ON date_bin('15 minutes', h.block_timestamp, TIMESTAMP '2000-01-01') = b.bucket
+    GROUP BY b.bucket
+    ORDER BY b.bucket ASC
+  `;
+
+  const total = Number(aggRow?.total ?? BigInt(0));
+  const succeeded = Number(aggRow?.succeeded ?? BigInt(0));
+  const failed = Number(aggRow?.failed ?? BigInt(0));
+  const guardFailed = Number(aggRow?.guard_failed ?? BigInt(0));
+  const mpcFailed = Number(aggRow?.mpc_failed ?? BigInt(0));
+  const pending = Number(aggRow?.pending ?? BigInt(0));
+  const mpcAttempted = Number(aggRow?.mpc_attempted ?? BigInt(0));
+  const minBlock = aggRow?.min_block_height ?? null;
+  const maxBlock = aggRow?.max_block_height ?? null;
+  const distinctRelayers = Number(aggRow?.distinct_relayers ?? BigInt(0));
+
+  // Denominator for success rates excludes pending — pending is its own
+  // bucket reported separately, not a hidden penalty against MPC/FA.
+  const classified = total - pending;
+
+  const fastAuthChainHealth: FastAuthChainHealth | null =
+    total === 0 && !lastSuccess
+      ? null
+      : {
+          computedAt: now,
+          chainHead: maxBlock !== null ? maxBlock.toString() : "0",
+          windowStartHeight: minBlock !== null ? minBlock.toString() : "0",
+          windowEndHeight: maxBlock !== null ? maxBlock.toString() : "0",
+          windowBlocks:
+            minBlock !== null && maxBlock !== null
+              ? Number(maxBlock - minBlock + BigInt(1))
+              : 0,
+          totalTransactions: total,
+          successfulTransactions: succeeded,
+          failedTransactions: failed,
+          guardFailedTransactions: guardFailed,
+          rpcPendingTransactions: pending,
+          successRatePct:
+            classified > 0
+              ? Math.round((succeeded / classified) * 1000) / 10
+              : null,
+          distinctRelayers,
+          lastSuccessTimestamp: lastSuccess?.block_timestamp ?? null,
+          lastSuccessTxHash: lastSuccess?.tx_hash ?? null,
+          minutesSinceLastSuccess: lastSuccess
+            ? Math.max(
+                0,
+                Math.floor(
+                  (now.getTime() - lastSuccess.block_timestamp.getTime()) /
+                    60_000,
+                ),
+              )
+            : null,
+          recentFailures: recentFastAuthFailures,
+        };
+
+  const mpcSucceeded = Math.max(0, mpcAttempted - mpcFailed);
+  const mpcChainHealth: MpcChainHealth | null =
+    total === 0
+      ? null
+      : {
+          computedAt: now,
+          attemptedTransactions: mpcAttempted,
+          failedTransactions: mpcFailed,
+          successfulTransactions: mpcSucceeded,
+          rpcPendingTransactions: pending,
+          successRatePct:
+            mpcAttempted > 0
+              ? Math.round((mpcSucceeded / mpcAttempted) * 1000) / 10
+              : null,
+          recentFailures: recentMpcFailures,
+        };
+
+  const chainHealthHistory: ChainHealthHistoryPoint[] = historyRows.map(
+    (row) => {
+      const t = Number(row.total);
+      const c = Number(row.classified);
+      const s = Number(row.succeeded);
+      const ma = Number(row.mpc_attempted);
+      const mf = Number(row.mpc_failed);
+      // Denominator is classified-only (excludes rpc_pending), matching the
+      // live cards. A bin where every tx is still pending will yield null
+      // and render as no_data, not "stale".
+      return {
+        computedAt: row.bucket,
+        totalTransactions: t,
+        fastAuthSuccessRatePct: c > 0 ? Math.round((s / c) * 1000) / 10 : null,
+        mpcAttempted: ma,
+        mpcFailed: mf,
+        mpcSuccessRatePct:
+          ma > 0 ? Math.round(((ma - mf) / ma) * 1000) / 10 : null,
+      };
+    },
+  );
+
+  return { fastAuthChainHealth, mpcChainHealth, chainHealthHistory };
+}
+
 function tryParseBigInt(value: string | null | undefined): bigint | null {
   if (!value) {
     return null;
@@ -1467,20 +1756,12 @@ export async function getDashboardData(): Promise<DashboardData> {
   const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const pollIntervalMs = resolveIndexerPollIntervalMs();
 
-  const failureWhere = {
-    OR: [
-      { failureReason: { not: null } },
-      { executionStatus: { contains: "failure", mode: "insensitive" as const } },
-    ],
-  };
-
-  const guardBreakdownPromise = loadGuardBreakdown(last24h, last7d, last30d, failureWhere);
-  const providerBreakdownPromise = loadProviderBreakdown(last24h, last7d, last30d, failureWhere);
+  const guardBreakdownPromise = loadGuardBreakdown(last24h, last7d, last30d);
+  const providerBreakdownPromise = loadProviderBreakdown(last24h, last7d, last30d);
   const relayerBreakdownByActivityPromise = loadRelayerBreakdownByActivity(
     last24h,
     last7d,
     last30d,
-    failureWhere,
   );
   const topAccountsPromise = loadTopAccounts(last24h, last7d, last30d, MAX_TOP_ACCOUNTS);
   const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
@@ -1498,16 +1779,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     signTotal24h,
     signTotal7d,
     signTotal30d,
-    signFailed24h,
-    signFailed7d,
-    signFailed30d,
-    signFailedAll,
+    signOutcomeCounts,
     nearHeightCheckpoint,
     nearScannedCheckpoint,
     nearChainHeadCheckpoint,
     nearBackfillOriginCheckpoint,
-    latestFastAuthChainHealth,
-    chainHealthHistoryRows,
+    chainHealthData,
     lastNearTransaction,
     relayerRows,
     relayerSponsoredPairsAllTime,
@@ -1535,27 +1812,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last24h } } }),
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last7d } } }),
     prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last30d } } }),
-    prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last24h }, ...failureWhere } }),
-    prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last7d }, ...failureWhere } }),
-    prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last30d }, ...failureWhere } }),
-    prisma.fastAuthSignEvent.count({ where: failureWhere }),
+    loadSignOutcomeCounts(last24h, last7d, last30d),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_final_block_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_last_scanned_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_chain_head_height" } }),
     prisma.indexerCheckpoint.findUnique({ where: { key: "near_backfill_start_origin" } }),
-    prisma.fastAuthChainHealthSnapshot.findFirst({ orderBy: { computedAt: "desc" } }),
-    prisma.fastAuthChainHealthSnapshot.findMany({
-      where: { computedAt: { gte: last24h } },
-      orderBy: { computedAt: "asc" },
-      select: {
-        computedAt: true,
-        totalTransactions: true,
-        successfulTransactions: true,
-        failedTransactions: true,
-        mpcAttemptedTransactions: true,
-        mpcFailedTransactions: true,
-      },
-    }),
+    loadChainHealth(now, last24h),
     prisma.nearTransaction.findFirst({ orderBy: { createdAt: "desc" } }),
     prisma.relayer.findMany({
       orderBy: { totalSignTransactions: "desc" },
@@ -1670,18 +1932,34 @@ export async function getDashboardData(): Promise<DashboardData> {
   };
 
   const signTotalAll = fastAuthSignEventsTotalCount;
+  const {
+    failed24h: signFailed24h,
+    failed7d: signFailed7d,
+    failed30d: signFailed30d,
+    failedAll: signFailedAll,
+    pending24h: signPending24h,
+    pending7d: signPending7d,
+    pending30d: signPending30d,
+    pendingAll: signPendingAll,
+  } = signOutcomeCounts;
   const transactionOverview: TransactionMetrics = {
     signed: {
-      last24h: Math.max(0, signTotal24h - signFailed24h),
-      last7d: Math.max(0, signTotal7d - signFailed7d),
-      last30d: Math.max(0, signTotal30d - signFailed30d),
-      all: Math.max(0, signTotalAll - signFailedAll),
+      last24h: Math.max(0, signTotal24h - signFailed24h - signPending24h),
+      last7d: Math.max(0, signTotal7d - signFailed7d - signPending7d),
+      last30d: Math.max(0, signTotal30d - signFailed30d - signPending30d),
+      all: Math.max(0, signTotalAll - signFailedAll - signPendingAll),
     },
     failed: {
       last24h: signFailed24h,
       last7d: signFailed7d,
       last30d: signFailed30d,
       all: signFailedAll,
+    },
+    pending: {
+      last24h: signPending24h,
+      last7d: signPending7d,
+      last30d: signPending30d,
+      all: signPendingAll,
     },
     total: {
       last24h: signTotal24h,
@@ -1849,80 +2127,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     ? Math.max(0, Math.floor((now.getTime() - latestIndexedBlockTimestamp.getTime()) / 60_000))
     : null;
 
-  const fastAuthChainHealth: FastAuthChainHealth | null = latestFastAuthChainHealth
-    ? {
-        computedAt: latestFastAuthChainHealth.computedAt,
-        chainHead: latestFastAuthChainHealth.chainHead.toString(),
-        windowStartHeight: latestFastAuthChainHealth.windowStartHeight.toString(),
-        windowEndHeight: latestFastAuthChainHealth.windowEndHeight.toString(),
-        windowBlocks: latestFastAuthChainHealth.windowBlocks,
-        totalTransactions: latestFastAuthChainHealth.totalTransactions,
-        successfulTransactions: latestFastAuthChainHealth.successfulTransactions,
-        failedTransactions: latestFastAuthChainHealth.failedTransactions,
-        guardFailedTransactions: latestFastAuthChainHealth.guardFailedTransactions,
-        successRatePct:
-          latestFastAuthChainHealth.totalTransactions > 0
-            ? Math.round(
-                (latestFastAuthChainHealth.successfulTransactions /
-                  latestFastAuthChainHealth.totalTransactions) *
-                  1000,
-              ) / 10
-            : null,
-        distinctRelayers: latestFastAuthChainHealth.distinctRelayers,
-        lastSuccessTimestamp: latestFastAuthChainHealth.lastSuccessTimestamp,
-        lastSuccessTxHash: latestFastAuthChainHealth.lastSuccessTxHash,
-        minutesSinceLastSuccess: latestFastAuthChainHealth.lastSuccessTimestamp
-          ? Math.max(
-              0,
-              Math.floor(
-                (now.getTime() - latestFastAuthChainHealth.lastSuccessTimestamp.getTime()) /
-                  60_000,
-              ),
-            )
-          : null,
-      }
-    : null;
-
-  const mpcChainHealth: MpcChainHealth | null = latestFastAuthChainHealth
-    ? {
-        computedAt: latestFastAuthChainHealth.computedAt,
-        attemptedTransactions: latestFastAuthChainHealth.mpcAttemptedTransactions,
-        failedTransactions: latestFastAuthChainHealth.mpcFailedTransactions,
-        successfulTransactions: Math.max(
-          0,
-          latestFastAuthChainHealth.mpcAttemptedTransactions -
-            latestFastAuthChainHealth.mpcFailedTransactions,
-        ),
-        successRatePct:
-          latestFastAuthChainHealth.mpcAttemptedTransactions > 0
-            ? Math.round(
-                ((latestFastAuthChainHealth.mpcAttemptedTransactions -
-                  latestFastAuthChainHealth.mpcFailedTransactions) /
-                  latestFastAuthChainHealth.mpcAttemptedTransactions) *
-                  1000,
-              ) / 10
-            : null,
-      }
-    : null;
-
-  const chainHealthHistory: ChainHealthHistoryPoint[] = chainHealthHistoryRows.map((row) => ({
-    computedAt: row.computedAt,
-    totalTransactions: row.totalTransactions,
-    fastAuthSuccessRatePct:
-      row.totalTransactions > 0
-        ? Math.round((row.successfulTransactions / row.totalTransactions) * 1000) / 10
-        : null,
-    mpcAttempted: row.mpcAttemptedTransactions,
-    mpcFailed: row.mpcFailedTransactions,
-    mpcSuccessRatePct:
-      row.mpcAttemptedTransactions > 0
-        ? Math.round(
-            ((row.mpcAttemptedTransactions - row.mpcFailedTransactions) /
-              row.mpcAttemptedTransactions) *
-              1000,
-          ) / 10
-        : null,
-  }));
+  const { fastAuthChainHealth, mpcChainHealth, chainHealthHistory } = chainHealthData;
 
   const indexerLag: IndexerLag = {
     chainHead: chainHeadValue,

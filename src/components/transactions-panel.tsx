@@ -12,6 +12,7 @@ type TimeWindowMetrics = {
 type TransactionMetrics = {
   signed: TimeWindowMetrics;
   failed: TimeWindowMetrics;
+  pending: TimeWindowMetrics;
   total: TimeWindowMetrics;
 };
 
@@ -113,6 +114,16 @@ function OverallTable({ data }: { data: TransactionMetrics }) {
             <td>{formatNumber(data.failed.last7d)}</td>
             <td>{formatNumber(data.failed.last30d)}</td>
             <td>{formatNumber(data.failed.all)}</td>
+          </tr>
+          <tr>
+            <td>
+              Pending{" "}
+              <span className="healthMetaHint">(awaiting receipt classification)</span>
+            </td>
+            <td>{formatNumber(data.pending.last24h)}</td>
+            <td>{formatNumber(data.pending.last7d)}</td>
+            <td>{formatNumber(data.pending.last30d)}</td>
+            <td>{formatNumber(data.pending.all)}</td>
           </tr>
           <tr>
             <td>Total</td>
