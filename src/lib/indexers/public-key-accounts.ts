@@ -5,6 +5,9 @@ import { createNearRpcManager, type NearRpcManager } from "@/lib/indexers/near-r
 import type { IndexerRunResult } from "@/lib/indexers/types";
 
 const CHECKPOINT_KEY = "fastauth_public_key_accounts_last_event_id";
+const ORPHAN_RETRY_CHECKPOINT_KEY = "fastauth_orphan_retry_last_run_at";
+const ORPHAN_RETRY_MIN_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+const ORPHAN_RETRY_MAX_PUBKEYS = 500;
 const DEFAULT_BATCH_SIZE = 200;
 const DEFAULT_LOOKBACK_DAYS = 30;
 const DEFAULT_MPC_FETCH_CONCURRENCY = 12;
@@ -223,10 +226,20 @@ async function fetchAccountsFromPool(
     return extractAccountsFromPayload(payload)
       .map((accountId) => accountId.trim().toLowerCase())
       .filter((accountId) => isLikelyNearAccountId(accountId));
-  } catch {
-    // If one source is down (rate-limit storm, transient outage), we still
-    // want results from the other. Empty array signals "this source had
-    // nothing to contribute"; the union will fall back to the other pool.
+  } catch (error) {
+    // The union with the other source still has a chance to return a result
+    // for this pubkey, so we don't propagate. But we DO log — silent FastNEAR
+    // failures are how the 34k orphan backlog accumulated unnoticed. The
+    // orphan-retry sweep below also re-attempts pubkeys that end up unresolved.
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        source: "fastauth_public_keys",
+        message: `${sourceLabel} account lookup failed`,
+        publicKey,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return [];
   }
 }
@@ -379,14 +392,12 @@ export async function collectFastAuthPublicKeyAccounts(
       },
     });
 
-    if (events.length === 0) {
-      return {
-        source: "fastauth_public_keys",
-        status: "ok",
-        inserted: 0,
-        details: "No new sign events with user-derived-key metadata.",
-      };
-    }
+    // Note: we deliberately do NOT early-return when events.length === 0.
+    // The orphan-retry sweep below needs to run on schedule (once an hour)
+    // regardless of whether new events arrived this cycle — its whole purpose
+    // is to catch users who signed once, never came back, and FastNEAR
+    // failed for them at the time. Empty-events runs are cheap: every
+    // per-batch loop becomes a no-op.
 
     const latestEventByKey = new Map<
       string,
@@ -421,8 +432,24 @@ export async function collectFastAuthPublicKeyAccounts(
             domainId: event.userDomainId as number,
           });
           mpcResults.set(event.id, key);
-        } catch {
-          // Skip — event will be re-attempted on a subsequent run.
+        } catch (error) {
+          // The previous comment claimed "event will be re-attempted on a
+          // subsequent run" but that's false: the checkpoint advances past
+          // this event regardless, so a swallowed MPC failure means the
+          // event stays without a derived pubkey forever (and is therefore
+          // also unreachable by the orphan-retry sweep, which requires a
+          // pubkey to look up). Log so we can see when this happens.
+          console.warn(
+            JSON.stringify({
+              level: "warn",
+              source: "fastauth_public_keys",
+              message: "MPC derived_public_key call failed",
+              eventId: event.id.toString(),
+              keyPath: event.userKeyPath,
+              domainId: event.userDomainId,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
         }
       },
     );
@@ -682,6 +709,193 @@ export async function collectFastAuthPublicKeyAccounts(
 
     const touchedAccounts = candidateAccountIds;
 
+    // ── Periodic orphan-retry sweep ────────────────────────────────────
+    // Once an hour, re-query FastNEAR/NearBlocks for pubkeys whose sign
+    // events are still unstamped (user_account_id IS NULL) AND that are
+    // not yet in pka. Covers the "user signed once, FastNEAR was down at
+    // that moment, user never came back" failure mode, which the back-stamp
+    // sweep alone cannot recover from (pka stays empty, so the join below
+    // has nothing to use).
+    let orphanRetryAttempted = 0;
+    let orphanRetryResolved = 0;
+
+    const orphanRetryCheckpoint = await prisma.indexerCheckpoint.findUnique({
+      where: { key: ORPHAN_RETRY_CHECKPOINT_KEY },
+    });
+    const lastRetryAtMs = orphanRetryCheckpoint
+      ? Date.parse(orphanRetryCheckpoint.value)
+      : 0;
+    const nowMs = Date.now();
+
+    if (nowMs - lastRetryAtMs >= ORPHAN_RETRY_MIN_INTERVAL_MS) {
+      // Earliest sign event per orphan pubkey supplies the metadata for the
+      // pka row we'll insert if FastNEAR resolves it. Bounded so a sudden
+      // backlog doesn't blast FastNEAR; the next hourly tick continues.
+      const orphanReps = await prisma.$queryRaw<
+        Array<{
+          public_key: string;
+          event_id: bigint;
+          block_timestamp: Date;
+          key_path: string | null;
+          predecessor_id: string | null;
+          domain_id: number | null;
+        }>
+      >`
+        SELECT DISTINCT ON (fse.user_derived_public_key)
+          fse.user_derived_public_key AS public_key,
+          fse.id AS event_id,
+          fse.block_timestamp,
+          fse.user_key_path AS key_path,
+          fse.fastauth_contract_id AS predecessor_id,
+          fse.user_domain_id AS domain_id
+        FROM fastauth_sign_events fse
+        LEFT JOIN fastauth_public_key_accounts pka
+          ON pka.public_key = fse.user_derived_public_key
+        WHERE fse.user_account_id IS NULL
+          AND fse.user_derived_public_key IS NOT NULL
+          AND pka.public_key IS NULL
+        ORDER BY fse.user_derived_public_key, fse.block_timestamp ASC
+        LIMIT ${ORPHAN_RETRY_MAX_PUBKEYS}
+      `;
+
+      orphanRetryAttempted = orphanReps.length;
+
+      if (orphanReps.length > 0) {
+        console.log(
+          JSON.stringify({
+            level: "info",
+            source: "fastauth_public_keys",
+            message: "Orphan-retry sweep starting",
+            pubkeyCount: orphanReps.length,
+          }),
+        );
+
+        type OrphanResolved = {
+          publicKey: string;
+          accountId: string;
+          keyPath: string | null;
+          predecessorId: string | null;
+          domainId: number | null;
+          blockTimestamp: Date;
+          eventId: bigint;
+        };
+        const resolvedRows: OrphanResolved[] = [];
+
+        await runWithConcurrency(
+          orphanReps,
+          resolvePositiveIntEnv("FASTAUTH_PUBLIC_KEY_LOOKUP_CONCURRENCY", DEFAULT_LOOKUP_CONCURRENCY),
+          async (rep) => {
+            const accounts = await fetchAccountsForPublicKey(
+              fastNearPool,
+              nearBlocksPool,
+              rep.public_key,
+            );
+            for (const accountId of accounts) {
+              resolvedRows.push({
+                publicKey: rep.public_key,
+                accountId,
+                keyPath: rep.key_path,
+                predecessorId: rep.predecessor_id,
+                domainId: rep.domain_id,
+                blockTimestamp: rep.block_timestamp,
+                eventId: rep.event_id,
+              });
+            }
+          },
+        );
+
+        if (resolvedRows.length > 0) {
+          await prisma.fastAuthPublicKeyAccount.createMany({
+            data: resolvedRows.map((r) => ({
+              publicKey: r.publicKey,
+              accountId: r.accountId,
+              keyPath: r.keyPath,
+              predecessorId: r.predecessorId,
+              domainId: r.domainId,
+              firstSeenAt: r.blockTimestamp,
+              lastSeenAt: r.blockTimestamp,
+              lastSourceEventId: r.eventId,
+            })),
+            skipDuplicates: true,
+          });
+
+          // Create accounts rows for any newly-discovered accountIds — the
+          // back-stamp UPDATE below uses pka but downstream queries (Top
+          // Accounts, account counts) read from `accounts`.
+          const distinctAccountIds = [...new Set(resolvedRows.map((r) => r.accountId))];
+          const existingAccounts = await prisma.account.findMany({
+            where: { accountId: { in: distinctAccountIds } },
+            select: { accountId: true },
+          });
+          const existingAccountSet = new Set(existingAccounts.map((r) => r.accountId));
+          const accountsToCreate = distinctAccountIds
+            .filter((id) => !existingAccountSet.has(id))
+            .map((id) => {
+              const sample = resolvedRows.find((r) => r.accountId === id)!;
+              return {
+                accountId: id,
+                accountType: classifyAccountType(id),
+                firstSeenAt: sample.blockTimestamp,
+                lastSeenAt: sample.blockTimestamp,
+                publicKeyCount: 1,
+                firstSourceEventId: sample.eventId,
+                lastSourceEventId: sample.eventId,
+              };
+            });
+          if (accountsToCreate.length > 0) {
+            await prisma.account.createMany({
+              data: accountsToCreate,
+              skipDuplicates: true,
+            });
+          }
+
+          orphanRetryResolved = new Set(resolvedRows.map((r) => r.publicKey)).size;
+        }
+
+        console.log(
+          JSON.stringify({
+            level: "info",
+            source: "fastauth_public_keys",
+            message: "Orphan-retry sweep finished",
+            pubkeyCount: orphanRetryAttempted,
+            resolvedPubkeys: orphanRetryResolved,
+            stillUnresolved: orphanRetryAttempted - orphanRetryResolved,
+          }),
+        );
+      }
+
+      await prisma.indexerCheckpoint.upsert({
+        where: { key: ORPHAN_RETRY_CHECKPOINT_KEY },
+        create: {
+          key: ORPHAN_RETRY_CHECKPOINT_KEY,
+          value: new Date(nowMs).toISOString(),
+        },
+        update: {
+          value: new Date(nowMs).toISOString(),
+        },
+      });
+    }
+
+    // Back-stamp historical orphans: any sign event still missing
+    // user_account_id whose pubkey we now know (because pka has it from this
+    // run, the orphan-retry sweep above, or any prior run) gets stamped
+    // here. The per-batch updateMany only covers events in the *current*
+    // batch — events that were processed earlier when the FastNEAR lookup
+    // returned [] or threw stay NULL forever otherwise, even after a later
+    // run resolves the same pubkey via a different event. Indexed UPDATE,
+    // idempotent.
+    const backStamped = await prisma.$executeRaw`
+      UPDATE fastauth_sign_events fse
+      SET user_account_id = owners.account_id
+      FROM (
+        SELECT DISTINCT ON (public_key) public_key, account_id
+        FROM fastauth_public_key_accounts
+        ORDER BY public_key, last_seen_at DESC
+      ) owners
+      WHERE fse.user_derived_public_key = owners.public_key
+        AND fse.user_account_id IS NULL
+    `;
+
     const maxEventId = events[events.length - 1]?.id;
 
     if (maxEventId !== undefined) {
@@ -701,7 +915,14 @@ export async function collectFastAuthPublicKeyAccounts(
       source: "fastauth_public_keys",
       status: "ok",
       inserted: linkedRows,
-      details: `Processed ${events.length} sign events; upserted ${linkedRows} links (${newLinks} new); touched ${touchedAccounts.size} accounts (${accountsCreated} new).`,
+      details:
+        `Processed ${events.length} sign events; upserted ${linkedRows} links (${newLinks} new); ` +
+        `touched ${touchedAccounts.size} accounts (${accountsCreated} new)` +
+        (backStamped > 0 ? `; back-stamped ${backStamped} historical orphans` : "") +
+        (orphanRetryAttempted > 0
+          ? `; orphan-retry attempted ${orphanRetryAttempted}, resolved ${orphanRetryResolved}`
+          : "") +
+        ".",
     };
   } catch (error) {
     return {

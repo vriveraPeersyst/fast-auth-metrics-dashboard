@@ -234,14 +234,25 @@ function GroupTable({
 }) {
   const [page, setPage] = useState(0);
 
-  if (rows.length === 0) {
-    return <p className="emptyState">No data for this slice yet.</p>;
+  // Hide fallback-key rows so the table reflects only well-classified data.
+  // The hidden counts surface in a footer below.
+  const hiddenUnclassified = rows.filter((r) => r.key === "(unclassified)").length;
+  const hiddenNone = rows.filter((r) => r.key === "(none)").length;
+  const filteredRows = rows.filter((r) => r.key !== "(unclassified)" && r.key !== "(none)");
+
+  if (filteredRows.length === 0) {
+    return (
+      <>
+        <p className="emptyState">No data for this slice yet.</p>
+        <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
+      </>
+    );
   }
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages - 1);
   const start = currentPage * PAGE_SIZE;
-  const visible = rows.slice(start, start + PAGE_SIZE);
+  const visible = filteredRows.slice(start, start + PAGE_SIZE);
 
   return (
     <>
@@ -289,11 +300,24 @@ function GroupTable({
         totalPages={totalPages}
         start={start}
         pageSize={PAGE_SIZE}
-        total={rows.length}
+        total={filteredRows.length}
         onPrev={() => setPage((p) => Math.max(0, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
       />
+      <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
     </>
+  );
+}
+
+function HiddenRowsFooter({ unclassified, none }: { unclassified: number; none: number }) {
+  if (unclassified === 0 && none === 0) return null;
+  const parts: string[] = [];
+  if (unclassified > 0) parts.push(`${unclassified} rows with (unclassified)`);
+  if (none > 0) parts.push(`${none} rows with (none)`);
+  return (
+    <p className="healthMetaHint" style={{ marginTop: 8 }}>
+      Hidden: {parts.join(", ")}.
+    </p>
   );
 }
 
@@ -314,14 +338,31 @@ function CrossTable({
 }) {
   const [page, setPage] = useState(0);
 
-  if (rows.length === 0) {
-    return <p className="emptyState">No data for this slice yet.</p>;
+  // A row is hidden if either its class side or its inner side is a fallback.
+  // Counted independently so the footer breakdown is informative.
+  const hiddenUnclassified = rows.filter((r) => r.classKey === "(unclassified)").length;
+  const hiddenNone = rows.filter((r) => r.innerKey === "(none)").length;
+  const filteredRows = rows.filter(
+    (r) =>
+      r.classKey !== "(unclassified)" &&
+      r.classKey !== "(none)" &&
+      r.innerKey !== "(unclassified)" &&
+      r.innerKey !== "(none)",
+  );
+
+  if (filteredRows.length === 0) {
+    return (
+      <>
+        <p className="emptyState">No data for this slice yet.</p>
+        <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
+      </>
+    );
   }
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages - 1);
   const start = currentPage * PAGE_SIZE;
-  const visible = rows.slice(start, start + PAGE_SIZE);
+  const visible = filteredRows.slice(start, start + PAGE_SIZE);
 
   return (
     <>
@@ -381,10 +422,11 @@ function CrossTable({
         totalPages={totalPages}
         start={start}
         pageSize={PAGE_SIZE}
-        total={rows.length}
+        total={filteredRows.length}
         onPrev={() => setPage((p) => Math.max(0, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
       />
+      <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
     </>
   );
 }

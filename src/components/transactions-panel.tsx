@@ -176,34 +176,60 @@ function BreakdownTable<T extends { last24h: WindowStats; last7d: WindowStats; l
 }
 
 function ActionTypeTable({ rows }: { rows: ActionTypeBreakdownItem[] }) {
-  if (rows.length === 0) {
-    return <p className="emptyState">No sign events with parsed action type yet.</p>;
+  const hiddenUnclassified = rows.filter((r) => r.actionType === "(unclassified)").length;
+  const hiddenNone = rows.filter((r) => r.actionType === "(none)").length;
+  const filteredRows = rows.filter(
+    (r) => r.actionType !== "(unclassified)" && r.actionType !== "(none)",
+  );
+
+  if (filteredRows.length === 0) {
+    return (
+      <>
+        <p className="emptyState">No sign events with parsed action type yet.</p>
+        <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
+      </>
+    );
   }
   return (
-    <div className="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Action</th>
-            <th>24h</th>
-            <th>7d</th>
-            <th>30d</th>
-            <th>All</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.actionType}>
-              <td>{row.actionType}</td>
-              <td>{formatNumber(row.last24h)}</td>
-              <td>{formatNumber(row.last7d)}</td>
-              <td>{formatNumber(row.last30d)}</td>
-              <td>{formatNumber(row.all)}</td>
+    <>
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>24h</th>
+              <th>7d</th>
+              <th>30d</th>
+              <th>All</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => (
+              <tr key={row.actionType}>
+                <td>{row.actionType}</td>
+                <td>{formatNumber(row.last24h)}</td>
+                <td>{formatNumber(row.last7d)}</td>
+                <td>{formatNumber(row.last30d)}</td>
+                <td>{formatNumber(row.all)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <HiddenRowsFooter unclassified={hiddenUnclassified} none={hiddenNone} />
+    </>
+  );
+}
+
+function HiddenRowsFooter({ unclassified, none }: { unclassified: number; none: number }) {
+  if (unclassified === 0 && none === 0) return null;
+  const parts: string[] = [];
+  if (unclassified > 0) parts.push(`${unclassified} rows with (unclassified)`);
+  if (none > 0) parts.push(`${none} rows with (none)`);
+  return (
+    <p className="healthMetaHint" style={{ marginTop: 8 }}>
+      Hidden: {parts.join(", ")}.
+    </p>
   );
 }
 

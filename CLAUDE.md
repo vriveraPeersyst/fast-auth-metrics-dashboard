@@ -30,7 +30,11 @@ pnpm backfill:range            # Archival-RPC-backed backfill for a block range 
 pnpm indexer:skip-forward      # Advance the NEAR checkpoint to current chain tip (destructive; requires --confirm)
 ```
 
-Additional maintenance scripts exist in `src/scripts/` (`inspect-db.ts`, `rebuild-marts.ts`, `wipe-db.ts`) without package.json aliases — run them directly with `pnpm tsx src/scripts/<name>.ts` when needed, and double-check the destructive ones before invoking.
+Additional scripts in `src/scripts/` without package.json aliases — run them directly with `pnpm tsx src/scripts/<name>.ts`:
+
+- Inspection: `inspect-db.ts`, `validate-pubkey-decoder.ts`
+- Repair / one-off enrichment: `rebuild-marts.ts`, `backfill-sign-action-type.ts`, `backfill-sign-event-accounts.ts`, `backfill-provider-type.ts`, `delete-consumer-after.ts`
+- **Destructive**: `wipe-db.ts` — wipes all indexer tables. Double-check before invoking.
 
 ### Gap management
 
@@ -57,10 +61,11 @@ Two services run from the **same repo and same Prisma schema**:
 
 ### Indexer pipeline (`src/lib/indexers/`)
 
-`run-all.ts` currently runs **two collectors concurrently** via `Promise.all` (they hit disjoint upstreams and write to disjoint tables):
+`run-all.ts` runs **three collectors concurrently** via `Promise.all` (they hit disjoint upstreams and write to disjoint tables):
 
-1. `near.ts` → `collectNearState` — ingests FastAuth-related NEAR transactions, derives `fastauth_sign_events` rows, then calls `rebuildRelayerMarts` inline so the `relayers` / `relayer_dapps` marts are refreshed as part of the same run.
-2. `public-key-accounts.ts` → `collectFastAuthPublicKeyAccounts` — resolves relayer public keys seen in sign events to NEAR accounts via FastNEAR, populating `fastauth_public_key_accounts`.
+1. `near.ts` → `collectNearState` — scans NEAR blocks, persists raw `near_transactions`, decodes NEP-366 `DelegateAction` payloads (via `decode-sign-action.ts`) to derive `fastauth_sign_events`, extracts the relayer-submitted Delegate-wrapped meta-txs into `fastauth_consumer_transactions`, attributes any tx whose signer holds a FastAuth-derived MPC key into `fastauth_user_transactions` (with per-token USD value via `compute-tx-value.ts` + `token-prices.ts`), and finally calls `rebuildRelayerMarts` inline so the `relayers` / `relayer_dapps` marts are refreshed in the same run.
+2. `public-key-accounts.ts` → `collectFastAuthPublicKeyAccounts` — resolves user-derived public keys seen in sign events to NEAR accounts via FastNEAR (with NearBlocks fallback through `http-endpoint-pool.ts`, the REST analog of `near-rpc-manager.ts`), populates `fastauth_public_key_accounts`, back-fills `user_account_id` onto historical sign-event rows, and upserts the `accounts` table.
+3. `fastauth-head-status.ts` → `collectFastAuthChainHealth` — self-throttled chain-head probe (≥10 min between runs). Scans a 300-block rolling window at chain tip, classifies each FastAuth tx by guard-vs-MPC failure mode, and writes `fastauth_chain_health_snapshots` for the dashboard's MPC / Fast Auth status cards.
 
 The Prisma schema still defines `Auth0Log`, `ServiceMetricSample`, and `AccountTvlDailySnapshot` models, but the corresponding collectors (`auth0.ts`, `service-metrics.ts`, `tvl.ts`, `dashboard-kpis.ts`) no longer exist in `src/lib/indexers/` — do not assume those tables are being populated by the current worker. If you're reviving any of them, add them back into `runAllIndexers` and wire a checkpoint key.
 
@@ -75,7 +80,8 @@ Every collector returns `IndexerRunResult` (`src/lib/indexers/types.ts`) with `s
 All collectors are checkpoint-driven via the `indexer_checkpoints` key/value table. In particular:
 
 - `near.ts` tracks `near_last_final_block_height`, `near_last_final_block_hash`, and `near_last_scanned_height`; on each run it backfills from the last scanned height up to latest final, respecting the hardcoded `NEAR_MAX_BLOCKS_PER_RUN`, and only advances checkpoints up to the highest contiguous successfully-persisted height.
-- `public-key-accounts.ts` checkpoints incrementally on `fastauth_sign_events.id`, with a first-run lookback window controlled by `FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS`.
+- `public-key-accounts.ts` keeps two checkpoints. `fastauth_public_key_accounts_last_event_id` advances forward through new sign events (first-run lookback window controlled by `FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS`). `fastauth_orphan_retry_last_run_at` throttles a separate **orphan-retry sweep** that runs at most every 20 min (`ORPHAN_RETRY_MIN_INTERVAL_MS`): it picks up to `ORPHAN_RETRY_MAX_PUBKEYS` (500) sign events still missing `user_account_id` whose pubkey isn't in pka yet and re-queries FastNEAR/NearBlocks for them. Every cycle also runs an idempotent **back-stamp UPDATE** that fills `user_account_id` on any historical sign event whose pubkey is now known to pka — this is what makes the collector self-healing against transient FastNEAR/NearBlocks failures (which are now also logged via `console.warn`, no longer swallowed). When editing this collector, preserve all three: forward checkpoint, throttled orphan retry, and end-of-cycle back-stamp.
+- `fastauth-head-status.ts` checkpoints `fastauth_chain_health_last_run_at` and short-circuits if the previous run was less than 10 minutes ago — so it only does real work on a small fraction of indexer ticks.
 
 When editing collectors, preserve this checkpoint-first design — do not substitute in-memory state.
 
@@ -93,13 +99,20 @@ See `FASTNEAR_RPC_LIMITS_RUNBOOK.md` for rate-limiting rules (treat 429/5xx as b
 
 Prisma schema in `prisma/schema.prisma`. The models split into:
 
-- **Raw ingest** — `near_transactions` (populated by `near.ts`). `auth0_logs`, `service_metrics_timeseries`, and `account_tvl_daily_snapshots` are declared but not actively populated (see pipeline note above).
-- **Derived** — `fastauth_sign_events` (produced by `near.ts` from raw transactions) and `fastauth_public_key_accounts` (produced by `public-key-accounts.ts`).
+- **Raw ingest** — `near_transactions` (populated by `near.ts`).
+- **Derived from raw, by `near.ts`**:
+  - `fastauth_sign_events` — decoded NEP-366 `FastAuth.sign()` calls; primary key `(tx_hash, action_index)`.
+  - `fastauth_consumer_transactions` — relayer-submitted Delegate-wrapped meta-txs that consume a FastAuth signature on chain; mostly `AddKey` / `DeleteKey` from login/logout key churn. Links back to its sign event via `linked_sign_event_id`.
+  - `fastauth_user_transactions` — any tx whose signer holds a FastAuth-derived MPC key (i.e. *real* user activity). Anchored on the account, not on session keys, so attribution survives session-key rotation. Carries per-token USD valuation populated at index-time.
+- **Resolved, by `public-key-accounts.ts`** — `fastauth_public_key_accounts` (publicKey → accountId mapping with first/last-seen) and `accounts` (FastAuth user accounts; note: not NextAuth — there is no auth in this dashboard).
 - **Marts** — `relayers`, `relayer_dapps` — rebuilt each NEAR run from sign events via `rebuildRelayerMarts` in `near.ts`.
-- **Checkpoints** — `indexer_checkpoints` key/value table.
-- **Accounts** — `accounts` model holds FastAuth user accounts (not NextAuth — there is no auth in this dashboard).
+- **Health** — `fastauth_chain_health_snapshots` — periodic 300-block-window probes; populated by `fastauth-head-status.ts`.
+- **Ops** — `indexer_checkpoints` (key/value); `missing_block_ranges` (gap tracking, see Gap management below).
+- **Declared but unpopulated** — `auth0_logs`, `service_metrics_timeseries`, `account_tvl_daily_snapshots`. The corresponding collectors no longer exist (see pipeline note above) — do not assume they have current data.
 
-The dashboard reads marts and derived tables via `src/lib/dashboard-data.ts`; it never reads raw `near_transactions` for KPIs.
+The dashboard reads marts, derived, resolved, and health tables via `src/lib/dashboard-data.ts`; it never reads raw `near_transactions` for KPIs.
+
+The UI deliberately separates two activity streams that are easy to confuse: **consumer transactions** (`fastauth_consumer_transactions`) are the on-chain *consequences* of `FastAuth.sign()` — high volume but skewed by login key churn — while **real activity** (`fastauth_user_transactions`) is what FastAuth users actually do on chain afterward, with their own session keys, attributed to the underlying account.
 
 ## Conventions
 
