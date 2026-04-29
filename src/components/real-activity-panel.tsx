@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
+import { TopFailureReasons } from "@/components/top-failure-reasons";
 import { formatActionTypeKey } from "@/lib/format-action-types";
 
 const PAGE_SIZE = 10;
@@ -42,6 +43,14 @@ type Nested = {
   byMethod: CrossRow[];
 };
 
+type FailureReasonRow = {
+  reason: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+};
+
 type RealActivity = {
   byWindow: {
     last24h: ActivityWindow;
@@ -54,6 +63,7 @@ type RealActivity = {
   byRelayer: Nested;
   byProvider: Nested;
   byGuard: Nested;
+  topFailureReasons: FailureReasonRow[];
   trackingStartedAt: {
     blockHeight: string;
     blockTimestamp: Date | string;
@@ -579,6 +589,8 @@ export function RealActivityPanel({ data }: { data: RealActivity }) {
           classRenderMode="code"
         />
       )}
+
+      <TopFailureReasons rows={data.topFailureReasons} />
     </>
   );
 }

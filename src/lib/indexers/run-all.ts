@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { collectFastAuthConsumerHealth } from "@/lib/indexers/fastauth-consumer-health";
 import { collectFastAuthHealth } from "@/lib/indexers/fastauth-health";
+import { collectFastAuthUserHealth } from "@/lib/indexers/fastauth-user-health";
 import { collectNearState } from "@/lib/indexers/near";
 import { collectFastAuthPublicKeyAccounts } from "@/lib/indexers/public-key-accounts";
 import type { IndexerRunResult } from "@/lib/indexers/types";
@@ -54,24 +56,34 @@ async function runIndexerWithLogs(params: {
 }
 
 export async function runAllIndexers(): Promise<IndexerRunResult[]> {
-  // The collectors hit disjoint upstreams (NEAR RPC for the main backfill and
-  // health classifier, FastNEAR for public-key lookups) and write to disjoint
-  // tables, so they can run concurrently. fastauth_health does bounded work
-  // per tick (DISCOVER_LIMIT new + RETRY_LIMIT retries), so no throttle needed.
-  const [near, publicKeyAccounts, health] = await Promise.all([
-    runIndexerWithLogs({
-      source: "near",
-      run: () => collectNearState(prisma),
-    }),
-    runIndexerWithLogs({
-      source: "fastauth_public_keys",
-      run: () => collectFastAuthPublicKeyAccounts(prisma),
-    }),
-    runIndexerWithLogs({
-      source: "fastauth_health",
-      run: () => collectFastAuthHealth(prisma),
-    }),
-  ]);
+  // The collectors hit disjoint upstreams (NEAR RPC for backfill + health
+  // classifiers, FastNEAR for public-key lookups) and write to disjoint
+  // tables, so they can run concurrently. The three health collectors each do
+  // bounded work per tick (DISCOVER_LIMIT new + RETRY_LIMIT retries) so they
+  // share the public RPC pool predictably.
+  const [near, publicKeyAccounts, health, consumerHealth, userHealth] =
+    await Promise.all([
+      runIndexerWithLogs({
+        source: "near",
+        run: () => collectNearState(prisma),
+      }),
+      runIndexerWithLogs({
+        source: "fastauth_public_keys",
+        run: () => collectFastAuthPublicKeyAccounts(prisma),
+      }),
+      runIndexerWithLogs({
+        source: "fastauth_health",
+        run: () => collectFastAuthHealth(prisma),
+      }),
+      runIndexerWithLogs({
+        source: "fastauth_consumer_health",
+        run: () => collectFastAuthConsumerHealth(prisma),
+      }),
+      runIndexerWithLogs({
+        source: "fastauth_user_health",
+        run: () => collectFastAuthUserHealth(prisma),
+      }),
+    ]);
 
-  return [near, publicKeyAccounts, health];
+  return [near, publicKeyAccounts, health, consumerHealth, userHealth];
 }

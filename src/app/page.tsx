@@ -438,11 +438,30 @@ export default async function Home() {
       {/* 2. Accounts + 3. Transactions */}
       <p className="sectionKicker">Overview</p>
 
-      <section className="logsPanel">
+      <section className="logsPanel logsPanel--featured">
         <div className="panelTitleRow">
           <h2>Accounts</h2>
           <p>Total {formatNumber(data.accountsOverview.totalAccounts)} accounts indexed.</p>
         </div>
+
+        <div className="kpiTileRow">
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Total accounts</span>
+            <span className="kpiTileValue">{formatNumber(data.accountsOverview.totalAccounts)}</span>
+            <span className="kpiTileHint">All time</span>
+          </div>
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Created</span>
+            <span className="kpiTileValue">{formatNumber(data.accountsOverview.created.last24h)}</span>
+            <span className="kpiTileHint">Last 24h</span>
+          </div>
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Active</span>
+            <span className="kpiTileValue">{formatNumber(data.accountsOverview.active.last24h)}</span>
+            <span className="kpiTileHint">Last 24h</span>
+          </div>
+        </div>
+
         <div className="tableWrap">
           <table>
             <thead>
@@ -474,11 +493,39 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="logsPanel">
+      <section className="logsPanel logsPanel--featured">
         <div className="panelTitleRow">
           <h2>Transactions</h2>
           <p>Sign-event volume per window. Tabs slice by provider, guard, or action type.</p>
         </div>
+
+        <div className="kpiTileRow">
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Signed</span>
+            <span className="kpiTileValue">{formatNumber(data.transactionOverview.signed.last24h)}</span>
+            <span className="kpiTileHint">Last 24h</span>
+          </div>
+          <div
+            className={`kpiTile${data.transactionOverview.failed.last24h > 0 ? " kpiTile--alert" : ""}`}
+          >
+            <span className="kpiTileLabel">Failed</span>
+            <span className="kpiTileValue">{formatNumber(data.transactionOverview.failed.last24h)}</span>
+            <span className="kpiTileHint">Last 24h</span>
+          </div>
+          <div
+            className={`kpiTile${data.transactionOverview.pending.last24h > 0 ? " kpiTile--warn" : ""}`}
+          >
+            <span className="kpiTileLabel">Pending</span>
+            <span className="kpiTileValue">{formatNumber(data.transactionOverview.pending.last24h)}</span>
+            <span className="kpiTileHint">Awaiting classification</span>
+          </div>
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Total</span>
+            <span className="kpiTileValue">{formatNumber(data.transactionOverview.total.all)}</span>
+            <span className="kpiTileHint">All time</span>
+          </div>
+        </div>
+
         <TransactionsPanel
           transactionOverview={data.transactionOverview}
           relayerBreakdown={data.relayerBreakdownByActivity}

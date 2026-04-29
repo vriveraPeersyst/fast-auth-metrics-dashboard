@@ -438,6 +438,79 @@ h3 {
   box-shadow: var(--shadow-card);
 }
 
+/* Featured panels — visually emphasized for the most-important sections
+   (Accounts, Transactions). Thicker accent border, slightly larger heading,
+   bigger table numbers. */
+.logsPanel--featured {
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-left: 4px solid var(--color-accent, var(--color-status-ok));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+}
+
+.logsPanel--featured .panelTitleRow h2 {
+  font-size: 26px;
+  line-height: 30px;
+}
+
+.logsPanel--featured table tbody td {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.logsPanel--featured table tbody td:first-child {
+  font-weight: 500;
+  color: var(--color-ink-subtle);
+}
+
+/* KPI tile row — big-number summary above the detailed table. */
+.kpiTileRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.kpiTile {
+  background: var(--color-surface-muted, var(--color-surface));
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.kpiTileLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+  font-weight: 700;
+}
+
+.kpiTileValue {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiTileHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-subtle);
+}
+
+.kpiTile--alert .kpiTileValue {
+  color: var(--color-status-err);
+}
+
+.kpiTile--warn .kpiTileValue {
+  color: var(--color-status-warn);
+}
+
 .panelTitleRow {
   display: flex;
   justify-content: space-between;
@@ -756,6 +829,23 @@ h3 {
 .recentFailuresList {
   margin-top: 16px;
   display: grid;
+  gap: 8px;
+}
+
+.topFailureReasonsPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-ink-subtle);
+  font-family: var(--font-mono);
+}
+
+.topFailureReasonsPaginationControls {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -1273,5 +1363,113 @@ tbody tr:hover {
   .signInLogo {
     font-size: 36px;
     line-height: 44px;
+  }
+}
+
+/* ─── Mobile responsiveness for newly-added components ─────────────────── */
+
+@media (max-width: 700px) {
+  /* Featured panel — pull back the bigger numbers so they don't dominate
+     on narrow screens. */
+  .logsPanel--featured .panelTitleRow h2 {
+    font-size: 20px;
+    line-height: 26px;
+  }
+
+  .logsPanel--featured table tbody td {
+    font-size: 14px;
+  }
+
+  /* KPI tiles — single tile per row on phones. */
+  .kpiTileRow {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .kpiTile {
+    padding: 12px 14px;
+  }
+
+  .kpiTileValue {
+    font-size: 22px;
+    line-height: 26px;
+  }
+
+  /* Recent failures — stack the row, hide the executor (still visible on tap
+     of the link's tx-page if needed). */
+  .recentFailuresLine {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .recentFailuresRow .failureExecutor {
+    max-width: 100%;
+    flex-basis: 100%;
+    order: 4;
+    font-size: 11px;
+  }
+
+  .recentFailuresRow .failureLink {
+    margin-left: 0;
+  }
+
+  /* Uptime legend — touch devices have no hover, so always show the legend
+     under the bar. Position it statically rather than absolute so it adds
+     to layout height instead of overlapping content below. */
+  .statusUptimeLegend {
+    position: static;
+    opacity: 1;
+    visibility: visible;
+    margin-top: 8px;
+  }
+
+  /* Top failure reasons pagination — stack on narrow screens. */
+  .topFailureReasonsPagination {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .topFailureReasonsPaginationControls {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpiTileRow {
+    grid-template-columns: 1fr;
+  }
+
+  .kpiTileValue {
+    font-size: 20px;
+    line-height: 24px;
+  }
+
+  .logsPanel--featured .panelTitleRow h2 {
+    font-size: 18px;
+    line-height: 22px;
+  }
+
+  .recentFailuresList {
+    margin-top: 12px;
+  }
+
+  /* Failure-reason text on tiny screens: allow wrapping rather than ellipsis,
+     so the user can read the full message without horizontal scroll. */
+  .failureReason {
+    white-space: normal;
+    line-height: 1.4;
+  }
+}
+
+/* Touch devices (no hover capability) — always show the uptime legend.
+   This catches tablets in landscape that may exceed 700px width. */
+@media (hover: none) {
+  .statusUptimeLegend {
+    position: static;
+    opacity: 1;
+    visibility: visible;
+    margin-top: 8px;
   }
 }

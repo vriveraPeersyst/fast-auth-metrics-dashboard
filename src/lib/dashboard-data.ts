@@ -316,6 +316,10 @@ type RealActivity = {
   byRelayer: RealActivityNested;
   byProvider: RealActivityNested;
   byGuard: RealActivityNested;
+  // Most common failure reason kinds (grouped by the prefix before the first
+  // colon, so payload variants collapse into the underlying error class).
+  // Sourced from fastauth_user_health_tx.
+  topFailureReasons: ConsumerFailureReasonRow[];
   trackingStartedAt: {
     blockHeight: string;
     blockTimestamp: Date;
@@ -759,6 +763,10 @@ async function loadConsumerOutcomes(
   last7d: Date,
   last30d: Date,
 ): Promise<ConsumerOutcomes> {
+  // Failures sourced from fastauth_consumer_health_tx (per-tx receipt-walk
+  // classification), not from the chunk-level failure_reason on
+  // fastauth_consumer_transactions. The chunk-level field only catches
+  // conversion failures; downstream receipt panics need the health table.
   const [windowsRow] = await prisma.$queryRaw<
     Array<{
       total_all: bigint;
@@ -773,16 +781,22 @@ async function loadConsumerOutcomes(
   >`
     SELECT
       COUNT(*) AS total_all,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
-    FROM fastauth_consumer_transactions
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions ct
+    LEFT JOIN fastauth_consumer_health_tx h ON h.tx_hash = ct.tx_hash
   `;
 
+  // Group by reason "kind" — the prefix before the first colon — so payload
+  // variants (account_id, amounts, nonces) collapse into the underlying error
+  // class. e.g. "LackBalanceForState: {...}" + "LackBalanceForState: {other}"
+  // both bucket as "LackBalanceForState". Ungrouped raw reasons would scatter
+  // every distinct payload into its own row.
   const reasonRows = await prisma.$queryRaw<
     Array<{
       reason: string | null;
@@ -793,16 +807,16 @@ async function loadConsumerOutcomes(
     }>
   >`
     SELECT
-      failure_reason AS reason,
+      SPLIT_PART(failure_reason, ':', 1) AS reason,
       COUNT(*) AS total_all,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h
-    FROM fastauth_consumer_transactions
-    WHERE failure_reason IS NOT NULL
-    GROUP BY failure_reason
+    FROM fastauth_consumer_health_tx
+    WHERE outcome = 'failure' AND failure_reason IS NOT NULL
+    GROUP BY SPLIT_PART(failure_reason, ':', 1)
     ORDER BY total_all DESC
-    LIMIT 10
+    LIMIT 50
   `;
 
   // Per-relayer is a direct group by; per-guard / per-provider need to JOIN
@@ -823,17 +837,18 @@ async function loadConsumerOutcomes(
     }>
   >`
     SELECT
-      outer_signer_id AS key,
+      ct.outer_signer_id AS key,
       COUNT(*) AS total_all,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
-    FROM fastauth_consumer_transactions
-    GROUP BY outer_signer_id
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions ct
+    LEFT JOIN fastauth_consumer_health_tx h ON h.tx_hash = ct.tx_hash
+    GROUP BY ct.outer_signer_id
     ORDER BY total_all DESC
   `;
 
@@ -856,12 +871,13 @@ async function loadConsumerOutcomes(
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last24h}) AS failed_24h
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last24h}) AS failed_24h
     FROM fastauth_consumer_transactions ct
     LEFT JOIN fastauth_sign_events se ON se.id = ct.linked_sign_event_id
+    LEFT JOIN fastauth_consumer_health_tx h ON h.tx_hash = ct.tx_hash
     GROUP BY se.guard_name
     ORDER BY total_all DESC
   `;
@@ -880,17 +896,18 @@ async function loadConsumerOutcomes(
     }>
   >`
     SELECT
-      array_to_string(inner_action_types, '+') AS key,
+      array_to_string(ct.inner_action_types, '+') AS key,
       COUNT(*) AS total_all,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h
-    FROM fastauth_consumer_transactions
-    GROUP BY array_to_string(inner_action_types, '+')
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last24h}) AS failed_24h
+    FROM fastauth_consumer_transactions ct
+    LEFT JOIN fastauth_consumer_health_tx h ON h.tx_hash = ct.tx_hash
+    GROUP BY array_to_string(ct.inner_action_types, '+')
     ORDER BY total_all DESC
   `;
 
@@ -913,12 +930,13 @@ async function loadConsumerOutcomes(
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last30d}) AS total_30d,
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last7d}) AS total_7d,
       COUNT(*) FILTER (WHERE ct.block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE ct.failure_reason IS NOT NULL AND ct.block_timestamp >= ${last24h}) AS failed_24h
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND ct.block_timestamp >= ${last24h}) AS failed_24h
     FROM fastauth_consumer_transactions ct
     LEFT JOIN fastauth_sign_events se ON se.id = ct.linked_sign_event_id
+    LEFT JOIN fastauth_consumer_health_tx h ON h.tx_hash = ct.tx_hash
     GROUP BY se.provider_type
     ORDER BY total_all DESC
   `;
@@ -996,6 +1014,8 @@ async function loadRealActivity(
   last30d: Date,
 ): Promise<RealActivity> {
   // Per-window totals + success/fail + distinct users (signer accounts).
+  // Failures sourced from fastauth_user_health_tx (per-tx receipt-walk),
+  // not the chunk-level failure_reason on fastauth_user_transactions.
   const [windowsRow] = await prisma.$queryRaw<
     Array<{
       total_all: bigint;
@@ -1018,22 +1038,23 @@ async function loadRealActivity(
   >`
     SELECT
       COUNT(*) AS total_all,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
-      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL) AS failed_all,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last30d}) AS failed_30d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last7d}) AS failed_7d,
-      COUNT(*) FILTER (WHERE failure_reason IS NOT NULL AND block_timestamp >= ${last24h}) AS failed_24h,
-      COUNT(DISTINCT signer_account_id) AS users_all,
-      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last30d}) AS users_30d,
-      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last7d}) AS users_7d,
-      COUNT(DISTINCT signer_account_id) FILTER (WHERE block_timestamp >= ${last24h}) AS users_24h,
-      COALESCE(SUM(value_usd), 0)::text AS vol_all,
-      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last30d}), 0)::text AS vol_30d,
-      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last7d}), 0)::text AS vol_7d,
-      COALESCE(SUM(value_usd) FILTER (WHERE block_timestamp >= ${last24h}), 0)::text AS vol_24h
-    FROM fastauth_user_transactions
+      COUNT(*) FILTER (WHERE u.block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE u.block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE u.block_timestamp >= ${last24h}) AS total_24h,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure') AS failed_all,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND u.block_timestamp >= ${last30d}) AS failed_30d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND u.block_timestamp >= ${last7d}) AS failed_7d,
+      COUNT(*) FILTER (WHERE h.outcome = 'failure' AND u.block_timestamp >= ${last24h}) AS failed_24h,
+      COUNT(DISTINCT u.signer_account_id) AS users_all,
+      COUNT(DISTINCT u.signer_account_id) FILTER (WHERE u.block_timestamp >= ${last30d}) AS users_30d,
+      COUNT(DISTINCT u.signer_account_id) FILTER (WHERE u.block_timestamp >= ${last7d}) AS users_7d,
+      COUNT(DISTINCT u.signer_account_id) FILTER (WHERE u.block_timestamp >= ${last24h}) AS users_24h,
+      COALESCE(SUM(u.value_usd), 0)::text AS vol_all,
+      COALESCE(SUM(u.value_usd) FILTER (WHERE u.block_timestamp >= ${last30d}), 0)::text AS vol_30d,
+      COALESCE(SUM(u.value_usd) FILTER (WHERE u.block_timestamp >= ${last7d}), 0)::text AS vol_7d,
+      COALESCE(SUM(u.value_usd) FILTER (WHERE u.block_timestamp >= ${last24h}), 0)::text AS vol_24h
+    FROM fastauth_user_transactions u
+    LEFT JOIN fastauth_user_health_tx h ON h.tx_hash = u.tx_hash
   `;
 
   const receiverRows = await prisma.$queryRaw<
@@ -1222,6 +1243,30 @@ async function loadRealActivity(
     select: { blockHeight: true, blockTimestamp: true },
   });
 
+  // Top failure reason kinds, grouped by the prefix before the first colon
+  // (so payload variants collapse into the underlying error class).
+  const reasonRows = await prisma.$queryRaw<
+    Array<{
+      reason: string | null;
+      total_all: bigint;
+      total_30d: bigint;
+      total_7d: bigint;
+      total_24h: bigint;
+    }>
+  >`
+    SELECT
+      SPLIT_PART(failure_reason, ':', 1) AS reason,
+      COUNT(*) AS total_all,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
+      COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h
+    FROM fastauth_user_health_tx
+    WHERE outcome = 'failure' AND failure_reason IS NOT NULL
+    GROUP BY SPLIT_PART(failure_reason, ':', 1)
+    ORDER BY total_all DESC
+    LIMIT 50
+  `;
+
   const buildWindow = (
     total: bigint,
     failed: bigint,
@@ -1299,6 +1344,13 @@ async function loadRealActivity(
       byReceiver: crossToRows(guardReceiverRows),
       byMethod: crossToRows(guardMethodRows),
     },
+    topFailureReasons: reasonRows.map((r) => ({
+      reason: r.reason ?? "(unknown)",
+      last24h: Number(r.total_24h),
+      last7d: Number(r.total_7d),
+      last30d: Number(r.total_30d),
+      all: Number(r.total_all),
+    })),
     trackingStartedAt: firstUserTx
       ? {
           blockHeight: firstUserTx.blockHeight.toString(),

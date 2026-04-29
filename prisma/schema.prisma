@@ -303,6 +303,54 @@ model FastAuthHealthTx {
   @@map("fastauth_health_tx")
 }
 
+// Per-tx receipt-level classification of consumer transactions (relayer-
+// submitted Delegate-wrapped meta-txs that consume a FastAuth signature).
+// Mirrors fastauth_health_tx in shape; outcome enum is simpler because these
+// don't pass through the FA → MPC pipeline:
+//   success | failure | rpc_pending
+// failing_executor_id + failure_reason carry the "why" when outcome=failure.
+model FastAuthConsumerHealthTx {
+  txHash            String    @id @map("tx_hash")
+  signerId          String    @map("signer_id")
+  blockHeight       BigInt    @map("block_height")
+  blockTimestamp    DateTime  @map("block_timestamp")
+  outcome           String
+  failingExecutorId String?   @map("failing_executor_id")
+  failureReason     String?   @map("failure_reason")
+  retryCount        Int       @default(0) @map("retry_count")
+  lastAttemptedAt   DateTime? @map("last_attempted_at")
+  lastError         String?   @map("last_error")
+  classifiedAt      DateTime? @map("classified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp, outcome])
+  @@index([outcome, lastAttemptedAt])
+  @@map("fastauth_consumer_health_tx")
+}
+
+// Same structure for real user activity (signer holds a FastAuth-derived MPC
+// key). Surfaces accurate Failed counts in the Real Activity panel.
+model FastAuthUserHealthTx {
+  txHash            String    @id @map("tx_hash")
+  signerId          String    @map("signer_id")
+  blockHeight       BigInt    @map("block_height")
+  blockTimestamp    DateTime  @map("block_timestamp")
+  outcome           String
+  failingExecutorId String?   @map("failing_executor_id")
+  failureReason     String?   @map("failure_reason")
+  retryCount        Int       @default(0) @map("retry_count")
+  lastAttemptedAt   DateTime? @map("last_attempted_at")
+  lastError         String?   @map("last_error")
+  classifiedAt      DateTime? @map("classified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp, outcome])
+  @@index([outcome, lastAttemptedAt])
+  @@map("fastauth_user_health_tx")
+}
+
 model FastAuthChainHealthSnapshot {
   id                     Int       @id @default(autoincrement())
   computedAt             DateTime  @default(now()) @map("computed_at")

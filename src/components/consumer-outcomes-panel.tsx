@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
+import { TopFailureReasons } from "@/components/top-failure-reasons";
 import { formatActionTypeKey } from "@/lib/format-action-types";
 
 type ConsumerOutcomeWindow = {
@@ -220,34 +221,7 @@ export function ConsumerOutcomesPanel({ data }: { data: ConsumerOutcomes }) {
         />
       )}
 
-      {data.topFailureReasons.length > 0 ? (
-        <div className="tableWrap" style={{ marginTop: 16 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Top failure reason</th>
-                <th>24h</th>
-                <th>7d</th>
-                <th>30d</th>
-                <th>All</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topFailureReasons.map((row) => (
-                <tr key={row.reason}>
-                  <td>
-                    <code>{row.reason}</code>
-                  </td>
-                  <td>{formatNumber(row.last24h)}</td>
-                  <td>{formatNumber(row.last7d)}</td>
-                  <td>{formatNumber(row.last30d)}</td>
-                  <td>{formatNumber(row.all)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+      <TopFailureReasons rows={data.topFailureReasons} />
     </>
   );
 }

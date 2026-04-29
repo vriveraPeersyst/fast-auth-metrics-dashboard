@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 
+import {
+  extractFailureReason,
+  isFailureStatus,
+  runWithConcurrency,
+} from "@/lib/indexers/health-classifier";
 import { createNearRpcManager } from "@/lib/indexers/near-rpc-manager";
 import type { IndexerRunResult } from "@/lib/indexers/types";
 
@@ -94,106 +99,6 @@ function resolveMpcContractIds(fastAuthContractIds: string[]): Set<string> {
     ids.add(fa.endsWith(".testnet") ? "v1.signer-prod.testnet" : "v1.signer");
   }
   return ids;
-}
-
-function isFailureStatus(status: unknown): boolean {
-  if (!status) {
-    return false;
-  }
-  if (typeof status === "string") {
-    return status.toLowerCase().includes("failure");
-  }
-  if (typeof status === "object") {
-    const entries = Object.entries(status as Record<string, unknown>);
-    if (entries.length === 0) {
-      return false;
-    }
-    return entries[0][0].toLowerCase().includes("failure");
-  }
-  return false;
-}
-
-// Pulls the most-specific human-readable error string out of a NEAR receipt's
-// Failure status. Walks common shapes (ActionError → kind → FunctionCallError
-// → ExecutionError, plus InvalidTxError variants); falls back to a JSON dump
-// of the Failure payload so we never silently drop the reason.
-function extractFailureReason(status: unknown): string | null {
-  if (!status || typeof status !== "object") {
-    return null;
-  }
-  const failure = (status as Record<string, unknown>).Failure;
-  if (failure === undefined || failure === null) {
-    return null;
-  }
-
-  // Walk the most common Failure shape:
-  //   ActionError.kind.{ FunctionCallError.ExecutionError | <variant>: <payload> }
-  //   InvalidTxError.<variant>: <payload>
-  //   Or a top-level string variant.
-  if (typeof failure === "string") {
-    return failure;
-  }
-  if (typeof failure === "object") {
-    const action = (failure as Record<string, unknown>).ActionError;
-    if (action && typeof action === "object") {
-      const kind = (action as Record<string, unknown>).kind;
-      if (typeof kind === "string") return kind;
-      if (kind && typeof kind === "object") {
-        const kindEntries = Object.entries(kind as Record<string, unknown>);
-        if (kindEntries.length > 0) {
-          const [kindName, kindPayload] = kindEntries[0];
-          if (kindName === "FunctionCallError" && kindPayload && typeof kindPayload === "object") {
-            const fnEntries = Object.entries(kindPayload as Record<string, unknown>);
-            if (fnEntries.length > 0) {
-              const [fnVariant, fnMsg] = fnEntries[0];
-              if (typeof fnMsg === "string") return fnMsg;
-              return `${fnVariant}: ${JSON.stringify(fnMsg)}`;
-            }
-          }
-          if (typeof kindPayload === "string") return `${kindName}: ${kindPayload}`;
-          return `${kindName}: ${JSON.stringify(kindPayload)}`;
-        }
-      }
-    }
-    const invalidTx = (failure as Record<string, unknown>).InvalidTxError;
-    if (invalidTx) {
-      if (typeof invalidTx === "string") return `InvalidTxError: ${invalidTx}`;
-      return `InvalidTxError: ${JSON.stringify(invalidTx)}`;
-    }
-  }
-
-  // Unknown shape — preserve everything so we can post-mortem it later.
-  try {
-    return JSON.stringify(failure);
-  } catch {
-    return null;
-  }
-}
-
-async function runWithConcurrency<T>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<void>,
-): Promise<void> {
-  if (items.length === 0) {
-    return;
-  }
-
-  const effectiveConcurrency = Math.max(1, Math.min(concurrency, items.length));
-  let cursor = 0;
-
-  const runners = Array.from({ length: effectiveConcurrency }, async () => {
-    while (true) {
-      const currentIndex = cursor;
-      cursor += 1;
-      if (currentIndex >= items.length) {
-        return;
-      }
-      await worker(items[currentIndex], currentIndex);
-    }
-  });
-
-  await Promise.all(runners);
 }
 
 async function classifyTx(
