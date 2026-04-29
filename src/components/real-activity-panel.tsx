@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
+import { formatActionTypeKey } from "@/lib/format-action-types";
 
 const PAGE_SIZE = 10;
 
@@ -328,6 +329,7 @@ function CrossTable({
   classRenderMode = "code",
   innerRenderMode = "code",
   formatClassLabel,
+  formatInnerLabel,
 }: {
   rows: CrossRow[];
   classLabel: string;
@@ -335,6 +337,7 @@ function CrossTable({
   classRenderMode?: RenderMode;
   innerRenderMode?: RenderMode;
   formatClassLabel?: (key: string) => string;
+  formatInnerLabel?: (key: string) => string;
 }) {
   const [page, setPage] = useState(0);
 
@@ -398,13 +401,18 @@ function CrossTable({
                     )}
                   </td>
                   <td>
-                    {innerRenderMode === "account-link" ? (
-                      <NearblocksLink kind="account" value={row.innerKey}>
-                        {row.innerKey}
-                      </NearblocksLink>
-                    ) : (
-                      <code>{row.innerKey}</code>
-                    )}
+                    {(() => {
+                      const innerDisplay = formatInnerLabel
+                        ? formatInnerLabel(row.innerKey)
+                        : row.innerKey;
+                      return innerRenderMode === "account-link" ? (
+                        <NearblocksLink kind="account" value={row.innerKey}>
+                          {innerDisplay}
+                        </NearblocksLink>
+                      ) : (
+                        <code>{innerDisplay}</code>
+                      );
+                    })()}
                   </td>
                   <td>{formatNumber(row.last24h)}</td>
                   <td>{formatNumber(row.last7d)}</td>
@@ -479,10 +487,11 @@ function NestedClassificationView({
         <CrossTable
           rows={data.byMethod}
           classLabel={classLabel}
-          innerLabel="Method name"
+          innerLabel="Method / action"
           classRenderMode={classRenderMode}
           innerRenderMode="code"
           formatClassLabel={formatClassLabel}
+          formatInnerLabel={formatActionTypeKey}
         />
       )}
     </>
@@ -544,7 +553,12 @@ export function RealActivityPanel({ data }: { data: RealActivity }) {
           renderMode="account-link"
         />
       ) : tab === "method" ? (
-        <GroupTable rows={data.byMethod} keyLabel="Method name" renderMode="code" />
+        <GroupTable
+          rows={data.byMethod}
+          keyLabel="Method / action"
+          renderMode="code"
+          formatLabel={formatActionTypeKey}
+        />
       ) : tab === "relayer" ? (
         <NestedClassificationView
           data={data.byRelayer}

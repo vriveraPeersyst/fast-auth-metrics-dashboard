@@ -1066,15 +1066,19 @@ async function loadRealActivity(
       vol_all: string | null;
     }>
   >`
+    -- For non-FunctionCall txs (AddKey, DeleteKey, Transfer) method_name is
+    -- NULL; fall back to the joined action_types so the panel surfaces what
+    -- the tx actually did instead of a "(no method)" bucket. Formatter on
+    -- the client collapses repeats (e.g. "DeleteKey+DeleteKey" → "Batch(DeleteKey×2)").
     SELECT
-      method_name AS method,
+      COALESCE(method_name, NULLIF(array_to_string(action_types, '+'), '')) AS method,
       COUNT(*) AS total_all,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last30d}) AS total_30d,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last7d}) AS total_7d,
       COUNT(*) FILTER (WHERE block_timestamp >= ${last24h}) AS total_24h,
       COALESCE(SUM(value_usd), 0)::text AS vol_all
     FROM fastauth_user_transactions
-    GROUP BY method_name
+    GROUP BY COALESCE(method_name, NULLIF(array_to_string(action_types, '+'), ''))
     ORDER BY total_all DESC
     LIMIT 20
   `;
@@ -1123,28 +1127,39 @@ async function loadRealActivity(
 
   // Cross-classification query: groups user txs by (classification, inner)
   // pair, where classification is the account's relayer/provider/guard
-  // and inner is the user tx's receiver_id or method_name.
+  // and inner is the user tx's receiver_id or method_name. For the method
+  // dimension specifically, we fall back to the joined action_types when
+  // method_name is NULL (AddKey/DeleteKey/Transfer txs have no method
+  // call) so the panel surfaces a meaningful action label rather than
+  // "(none)". Client formatter collapses repeats.
   const buildCrossQuery = (
     classCol: "relayer_account_id" | "provider_type" | "guard_name",
     innerCol: "receiver_id" | "method_name",
-  ) => Prisma.sql`
-    ${accountClassificationCte}
-    SELECT
-      COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)') AS class_key,
-      COALESCE(t.${Prisma.raw(innerCol)}, '(none)') AS inner_key,
-      COUNT(*) AS total_all,
-      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last30d}) AS total_30d,
-      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last7d}) AS total_7d,
-      COUNT(*) FILTER (WHERE t.block_timestamp >= ${last24h}) AS total_24h,
-      COALESCE(SUM(t.value_usd), 0)::text AS vol_all
-    FROM fastauth_user_transactions t
-    LEFT JOIN account_class ac ON ac.user_account_id = t.signer_account_id
-    GROUP BY
-      COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)'),
-      COALESCE(t.${Prisma.raw(innerCol)}, '(none)')
-    ORDER BY total_all DESC
-    LIMIT 200
-  `;
+  ) => {
+    const innerExpr =
+      innerCol === "method_name"
+        ? Prisma.sql`COALESCE(t.method_name, NULLIF(array_to_string(t.action_types, '+'), ''), '(none)')`
+        : Prisma.sql`COALESCE(t.${Prisma.raw(innerCol)}, '(none)')`;
+
+    return Prisma.sql`
+      ${accountClassificationCte}
+      SELECT
+        COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)') AS class_key,
+        ${innerExpr} AS inner_key,
+        COUNT(*) AS total_all,
+        COUNT(*) FILTER (WHERE t.block_timestamp >= ${last30d}) AS total_30d,
+        COUNT(*) FILTER (WHERE t.block_timestamp >= ${last7d}) AS total_7d,
+        COUNT(*) FILTER (WHERE t.block_timestamp >= ${last24h}) AS total_24h,
+        COALESCE(SUM(t.value_usd), 0)::text AS vol_all
+      FROM fastauth_user_transactions t
+      LEFT JOIN account_class ac ON ac.user_account_id = t.signer_account_id
+      GROUP BY
+        COALESCE(ac.${Prisma.raw(classCol)}, '(unclassified)'),
+        ${innerExpr}
+      ORDER BY total_all DESC
+      LIMIT 200
+    `;
+  };
 
   type CrossRow = {
     class_key: string;
