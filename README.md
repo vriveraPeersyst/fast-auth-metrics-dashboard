@@ -1,11 +1,11 @@
 # FastAuth Metrics Dashboard
 
-Private dashboard for FastAuth analytics with:
+Public dashboard for FastAuth analytics on NEAR mainnet, plus a parallel **MPC Network** section that observes consensus health on `v1.signer`. Stack:
 
-- Next.js App Router + TypeScript
-- pnpm workspace tooling
-- Google SSO restricted to the peersyst.org domain
-- Railway Postgres-backed storage for indexer output
+- **Next.js 16.2.4 + React 19.2.4 + TypeScript** (App Router, server-component data fetching).
+- **pnpm 10** for tooling.
+- **Railway Postgres** as the single store. The dashboard reads pre-computed marts; an indexer worker writes them.
+- No auth layer — treat all displayed data as public.
 
 ## 1. Local Setup
 
@@ -66,52 +66,47 @@ pnpm prisma migrate deploy
 
 ## 3. Indexers
 
-This repo includes six collectors:
+`pnpm indexers:worker` runs a long-poll loop that calls `runAllIndexers()` every `INDEXER_POLL_INTERVAL_MS` (default 30s). The loop runs **six collectors concurrently**:
 
-- Auth0 incremental logs collector
-- Prometheus collector for relayer and issuers
-- NEAR transaction collector with final block checkpoints + derived FastAuth sign events
-- FastAuth public-key account linker (maps relayer public keys to discovered NEAR accounts)
-- Sponsored-account TVL snapshot collector
-- Dashboard KPI snapshot collector (writes transaction/account/relayer monitoring metrics)
+1. **NEAR scanner** (`src/lib/indexers/near.ts`) — scans final blocks, persists `near_transactions` for FastAuth-touching txs, derives `fastauth_sign_events` (NEP-366 `DelegateAction` decoded), `fastauth_consumer_transactions` (relayer meta-txs that consume a signature), `fastauth_user_transactions` (real user activity, USD-priced at index time). Same scan runs **Path 4**: persists txs to `mpc_transactions` when `receiver_id = v1.signer`. Rebuilds `relayers` / `relayer_dapps` marts inline.
+2. **Public-key linker** (`public-key-accounts.ts`) — resolves user-derived pubkeys to NEAR accounts via FastNEAR (no NearBlocks fallback). Populates `fastauth_public_key_accounts` and `accounts`. Throttled orphan-retry sweep (≤20 min) plus end-of-cycle back-stamp UPDATE for self-healing.
+3. **FastAuth health classifier** (`fastauth-health.ts`) — receipt-walks FA-receiver txs into `fastauth_health_tx` with outcome ∈ `success | guard_failure | mpc_failure | other_failure | rpc_pending`. Bounded per-cycle (≤50 discover + ≤25 retry).
+4. **Consumer health classifier** (`fastauth-consumer-health.ts`) — same shape, simpler outcomes (`success | failure | rpc_pending`).
+5. **User-activity health classifier** (`fastauth-user-health.ts`) — same shape, sourced from `fastauth_user_transactions`.
+6. **MPC consensus collector** (`mpc-consensus.ts`) — parses `sign:`/`respond:` logs from v1.signer receipts, populates `mpc_sign_requests` and `mpc_sign_responses` matched by payload bytes (`{scheme}:{hex(payload)}`), rebuilds the `mpc_nodes` mart. Tombstones unparseable txs in `mpc_log_parse_skipped` to avoid retry loops on guard-rejected signs.
 
-Crash-recovery behavior:
+Crash-recovery: every collector is checkpoint-driven via `indexer_checkpoints` (k/v table) or anti-join discovery. The NEAR collector advances checkpoints only to the highest contiguous successfully-persisted height; holes get retried. RPC pool (`near-rpc-manager.ts`) round-robins six public NEAR endpoints with 60s blacklisting on 429/5xx, and requires majority consensus on `UNKNOWN_BLOCK` before skipping a height.
 
-- Auth0 ingestion is checkpointed transactionally with durable progress updates.
-- NEAR indexing backfills missed final block heights from last checkpoint, writes `near_transactions` rows for FastAuth contract transactions, derives `fastauth_sign_events`, and rebuilds relayer marts.
-- Public-key account linking is checkpointed incrementally on `fastauth_sign_events.id`.
-- Service counter metrics also persist *_delta samples to preserve aggregate counter growth across worker downtime.
-
-Primary mode: continuous backend worker (recommended):
+Primary mode: continuous worker (recommended). Railway service runs:
 
 ```bash
 pnpm indexers:worker
 ```
 
-Worker config:
+### Required env vars (worker)
 
-- INDEXER_POLL_INTERVAL_MS (default 30000)
-- NEAR_RPC_URL (normal endpoint for latest-final polling)
-- NEAR_RPC_FALLBACKS (optional comma-separated fallback endpoints for latest-final polling)
-- NEAR_ARCHIVAL_RPC_URL (archival endpoint for historical backfill)
-- NEAR_ARCHIVAL_RPC_FALLBACKS (optional comma-separated fallback endpoints for historical backfill)
-- NEAR_BACKFILL_START_HEIGHT (optional first-run seed if no checkpoint exists)
-- NEAR_MAX_BLOCKS_PER_RUN (default 100)
-- FASTAUTH_CONTRACT_IDS (comma-separated FastAuth contract IDs used for sign-event derivation)
-- FASTAUTH_PUBLIC_KEY_ACCOUNTS_URL_TEMPLATE (optional URL template for account lookup by public key; supports `{publicKey}` token)
-- FASTAUTH_PUBLIC_KEY_ACCOUNTS_BATCH_SIZE (default 200)
-- FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS (default 30; only used before first account-link checkpoint)
-- TVL_RPC_URL (optional; defaults to NEAR_RPC_URL)
-- TVL_LOOKBACK_DAYS (default 30)
-- TVL_MAX_ACCOUNTS_PER_RUN (default 200)
+- **`DATABASE_URL`** — Railway Postgres connection string (private URL when running on Railway).
+- **`FASTAUTH_CONTRACT_IDS`** — comma-separated list. Mainnet: `fast-auth.near`.
 
-Relayer dashboard sourcing:
+### Optional env vars (worker)
 
-- Relayer and relayer-dapp stats are sourced from backend-built marts (`relayers`, `relayer_dapps`) derived from indexed FastAuth sign events.
-- FastAuth transaction totals/failures and relayer activity windows are sourced from `fastauth_sign_events`.
-- Account totals/created/active windows are sourced from `fastauth_public_key_accounts`.
-- Relayer TVL is computed from latest `account_tvl_daily_snapshots` for sponsored accounts.
-- Relayer project owner labels are sourced from indexed relayer Prometheus samples when exposed.
+- `INDEXER_POLL_INTERVAL_MS` — loop interval, default 30000ms (Railway worker uses 10000ms in production).
+- `FASTAUTH_PUBLIC_KEY_ACCOUNTS_URL_TEMPLATES` — override FastNEAR template (default: `https://api.fastnear.com/v1/public_key/{publicKey}/all`).
+- `FASTAUTH_PUBLIC_KEY_ACCOUNTS_BATCH_SIZE` — default 200.
+- `FASTAUTH_PUBLIC_KEY_LOOKBACK_DAYS` — first-run lookback for orphan resolution, default 30.
+- `FASTAUTH_PUBLIC_KEY_LOOKUP_CONCURRENCY` — default 24.
+- `FASTNEAR_API_KEY` — Bearer token. Required once you hit the anonymous rate limit.
+- `FASTAUTH_MPC_CONTRACT_ID` — override the auto-detected MPC contract ID (default: `v1.signer`).
+
+**Tuning knobs are hardcoded in source**, not env-driven: block / chunk concurrency, max blocks per run, RPC pool, request timeout, blacklist duration, health-classifier per-cycle caps, MPC consensus per-cycle caps. They're deployment-invariant; change them in `near.ts`, `fastauth-health.ts`, `mpc-consensus.ts`, `near-rpc-manager.ts` rather than via env vars. See `FASTNEAR_RPC_LIMITS_RUNBOOK.md` for guardrails.
+
+### Dashboard sourcing
+
+- Relayer and relayer-dapp stats: `relayers` / `relayer_dapps` marts (rebuilt by `near.ts`).
+- FastAuth transaction totals / failures / pending: `fastauth_sign_events` + `fastauth_health_tx`.
+- Accounts panel: `accounts` (the `First seen` column reflects the *first time we observed* the account in a sign event, not its on-chain creation).
+- Consumer Outcomes / Real Activity: `fastauth_consumer_transactions` + `_health_tx` and `fastauth_user_transactions` + `_health_tx`.
+- MPC Network section: `mpc_sign_requests`, `mpc_sign_responses`, `mpc_nodes` (latency yield→resume by node, hourly liveness heatmap, network roster, pending sign requests > 1 min).
 
 One-shot manual run:
 
@@ -230,15 +225,40 @@ Run `pnpm audit --prod` before each release to catch new advisories.
 
 ## 7. Data Tables
 
-Prisma models included:
+Prisma schema in `prisma/schema.prisma`. Current set:
 
-- auth0_logs
-- service_metrics_timeseries
-- near_transactions
-- fastauth_sign_events
-- relayers
-- relayer_dapps
-- account_tvl_daily_snapshots
-- indexer_checkpoints
+**Raw ingest**
+- `near_transactions` — txs touching FastAuth (Paths 1-3 of `near.ts`).
+- `mpc_transactions` — txs to `v1.signer` (Path 4 of `near.ts`, raw landing for MPC consensus).
 
-These are designed to align with the collection plan and can be expanded during KPI mart development.
+**Derived from raw (by `near.ts`)**
+- `fastauth_sign_events` — NEP-366 `FastAuth.sign()` decoded, PK `(tx_hash, action_index)`.
+- `fastauth_consumer_transactions` — Delegate-wrapped meta-txs that consume a signature.
+- `fastauth_user_transactions` — real user activity, USD-priced.
+
+**Resolved (by `public-key-accounts.ts`)**
+- `fastauth_public_key_accounts` — pubkey → accountId mapping.
+- `accounts` — FastAuth user accounts (note: `firstSeenAt` = first observation in a sign event, not on-chain creation).
+
+**Health classifications (per-tx receipt walks)**
+- `fastauth_health_tx` — outcome ∈ `success | guard_failure | mpc_failure | other_failure | rpc_pending`. Carries `reached_mpc`.
+- `fastauth_consumer_health_tx` — outcome ∈ `success | failure | rpc_pending`.
+- `fastauth_user_health_tx` — same simplified outcome enum.
+
+**MPC consensus (by `mpc-consensus.ts`)**
+- `mpc_sign_requests` — parsed `sign:` logs. `source ∈ {direct, fastauth}`, `trafficSource ∈ {organic, synthetic}` (the latter flags `tx-bench.near` as benchmark traffic).
+- `mpc_sign_responses` — parsed `respond:` logs, matched to requests via `request_key = {scheme}:{hex(payload)}`.
+- `mpc_nodes` — roster mart, aggregated from responses.
+- `mpc_log_parse_skipped` — tombstones for txs without parseable logs (typically guard-rejected FastAuth signs that never reached v1.signer).
+
+**Marts**
+- `relayers`, `relayer_dapps` — rebuilt each NEAR run.
+- `mpc_nodes` — rebuilt each cycle that inserts new responses.
+
+**Ops**
+- `indexer_checkpoints` (key/value).
+- `missing_block_ranges` (gap tracking — see "Gap management" in `CLAUDE.md`).
+
+**Legacy / unused** — `auth0_logs`, `service_metrics_timeseries`, `account_tvl_daily_snapshots`, `fastauth_chain_health_snapshots` are declared in schema but no current collector populates them.
+
+There is no test runner configured. Verification is via inspection scripts under `src/scripts/` (see `inspect-db.ts`, `_inspect-mpc.ts`, `_validate-mpc-parser.ts`, etc.).

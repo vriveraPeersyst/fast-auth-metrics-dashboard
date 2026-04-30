@@ -7,7 +7,7 @@ Recorrido modular pensado para una reunión de ~20 min, o reducible a 10. Cada s
 ## 0. Antes de la reunión (30 seg de preparación)
 
 - Abrir el dashboard en una pestaña; en otra, `prisma:studio` o psql (solo si asisten ingenieros).
-- Tener visibles en la home estas tarjetas: System Status, MPC Status, Fast Auth Status, Transactions, Consumer Outcomes, Real Activity, Top Failure Reasons, Top Relayers.
+- Tener visibles en la home estas secciones: System Status, MPC Status, Fast Auth Status, Transactions, Consumer Outcomes, Real Activity, Top Failure Reasons, Top Relayers, Accounts, **MPC Network**.
 - Si el indexador va atrasado, mencionarlo de entrada — mejor que te lo pregunten.
 
 ---
@@ -103,20 +103,38 @@ Esta distinción importa porque, si los rechazos del guard — JWT inválido, to
 
 La columna se llamaba 'Created' antes y la renombramos justamente porque inducía a error. Si alguien pregunta '¿se crearon X cuentas hoy?', la respuesta correcta es '*observamos por primera vez X cuentas usando FastAuth hoy* — algunas pueden ser nuevas, otras existían desde antes'."
 
+### 3h. MPC Network — la red por dentro *(nuevo)*
+
+**[MOSTRAR]** Sección MPC Network (kicker propio, después de Accounts y antes de Indexer Status). Cuatro sub-secciones: KPIs overview, latencia yield→resume, liveness heatmap, network roster, pending sign requests.
+
+**[DECIR]** "Hasta aquí hemos visto FastAuth desde el punto de vista del usuario. Esta sección mira el otro lado: la red MPC `v1.signer` que firma todas las transacciones — y que da servicio no solo a FastAuth, sino a cualquier app de NEAR Chain Signatures. Indexamos toda transacción top-level a `v1.signer` y parseamos los logs estructurados que el contrato emite (`sign:` y `respond:`) para emparejar peticiones con respuestas por bytes del payload.
+
+Lo que se ve:
+
+- **KPIs overview**: responses 24h totales, sign requests (separados en orgánico vs sintético — el bot `tx-bench.near` queda etiquetado), cuántos vienen de FastAuth específicamente, y cuántos signs llevan más de 1 minuto sin respuesta (sub-minuto es propagación normal).
+- **Yield→resume latency by node** — la métrica estrella. Para cada nodo MPC: p50 / p95 / p99 del tiempo entre el `sign()` que dispara el yield y el `respond()` que lo resume. Ningún explorer público de NEAR tiene esto.
+- **Liveness heatmap** — 24 buckets horarios por nodo. Un nodo silencioso aparece como una fila pálida y se detecta antes de que rompa el quorum.
+- **Network roster** — los ~9 nodos MPC observados con sus contadores 24h / 7d / all.
+- **Pending sign requests** — signs sin respuesta matched que llevan más de 1 minuto. Distinto del `rpc_pending` de FastAuth: aquello es nuestro fallo de clasificación; esto es estado real on-chain."
+
+**[DECIR]** "Importante: este collector mira la red MPC entera, no solo los signs que vienen de FastAuth. La columna `traffic_source` en pending y el contador `from FastAuth` permiten segmentar."
+
 ---
 
 ## 4. De dónde salen los datos *(omitir si no hay ingenieros en la sala)* (3 min)
 
-**[DECIR]** "El worker corre cinco collectors en paralelo cada 30 segundos:
+**[DECIR]** "El worker corre seis collectors en paralelo cada 10-30 segundos:
 
-1. **Scanner de NEAR** — trae bloques, decodifica los DelegateActions de NEP-366, llena las tablas raw y derivadas, y valoriza los movimientos de tokens en USD.
-2. **Linker de claves públicas** — resuelve las claves públicas que vemos en sign events de vuelta a cuentas NEAR vía FastNEAR, con NearBlocks como fallback. Es self-healing: si un lookup falla, el siguiente ciclo reintenta y vuelve a estampar.
+1. **Scanner de NEAR** — trae bloques, decodifica los DelegateActions de NEP-366, llena las tablas raw y derivadas, valoriza los movimientos de tokens en USD. El mismo scan también persiste a parte las txs cuyo receiver es `v1.signer` — el raw landing del MPC consensus, sin RPC adicional.
+2. **Linker de claves públicas** — resuelve las claves públicas que vemos en sign events de vuelta a cuentas NEAR vía FastNEAR. Es self-healing: si un lookup falla, el siguiente ciclo reintenta y vuelve a estampar (NearBlocks lo quitamos porque Cloudflare lo bloqueaba sin aportar nada que FastNEAR no resolviera).
 3–5. **Tres clasificadores de salud** — uno por cada uno de FA-receiver, consumer y user. Recorren los receipts y asignan outcomes.
+6. **Collector de MPC consensus** — mira las txs en `mpc_transactions` y los receipts FastAuth, parsea los logs `sign:` y `respond:` que emite `v1.signer`, y empareja por bytes de payload. Tres pasadas por ciclo con anti-join contra una tabla de tombstones (`mpc_log_parse_skipped`) para no reintentar txs que el guard rechazó antes de llegar a MPC.
 
-Dos puntos de diseño que vale la pena mencionar:
+Tres puntos de diseño que vale la pena mencionar:
 
 - **Checkpoint primero.** Nunca avanzamos por encima de un hueco. Si un bloque no logra persistirse, el checkpoint se queda donde estaba hasta que el próximo ciclo lo alcance. La recuperación ante caídas es automática.
-- **Consenso de mayoría sobre bloques faltantes.** Usamos seis RPCs públicos en round-robin. Si uno dice que un bloque no existe, no le creemos — exigimos que al menos la mitad de los endpoints sanos coincidan antes de saltarlo. Esto nos salvó una vez cuando un solo RPC con poda casi avanza el checkpoint por encima de bloques reales."
+- **Consenso de mayoría sobre bloques faltantes.** Usamos seis RPCs públicos en round-robin. Si uno dice que un bloque no existe, no le creemos — exigimos que al menos la mitad de los endpoints sanos coincidan antes de saltarlo. Esto nos salvó una vez cuando un solo RPC con poda casi avanza el checkpoint por encima de bloques reales.
+- **Path B' para MPC consensus.** Los logs de `sign:` y `respond:` llevan structs distintas — el contrato canonicaliza `path → tweak` en medio. Pero el campo `payload` (los bytes a firmar) aparece igual en los dos lados. Eso lo usamos como clave de matching: `{scheme}:{hex(payload)}`. No tenemos que reimplementar la canonicalización del contrato; solo seguir su formato `Debug` de Rust. Pinneado a la commit `1ee251d` de `near/mpc`."
 
 ---
 
@@ -132,17 +150,19 @@ Dos puntos de diseño que vale la pena mencionar:
 
 ## 6. Cierre y preguntas frecuentes (1 min)
 
-**[DECIR]** "Tres ideas para llevarse:
+**[DECIR]** "Cuatro ideas para llevarse:
 
 1. **Dos números, dos preguntas.** Fast Auth Status = experiencia del usuario. MPC Status = salud de la infraestructura. No las mezclen.
 2. **Dos flujos de actividad.** Consumer = plomería. Real Activity = uso real con valor en dólares.
 3. **Los fallos están atribuidos, no agregados.** Cuando algo se rompe, sabemos si es guards, MPC o algo más abajo — y qué contrato exactamente.
+4. **MPC Network es la otra cara.** No solo medimos FastAuth; también la red MPC que firma para todos. Latencia por nodo, liveness, roster, pendientes — y la sección segmenta cuánto del tráfico viene de FastAuth vs el resto.
 
 Preguntas que probablemente surjan:
 
 - *'¿Por qué la tasa de éxito no es del 100%?'* — Llevarlos por Top Failure Reasons; la mayoría del tiempo es un contrato aguas abajo, no FastAuth en sí.
 - *'¿Qué tan fresca es la data?'* — El lag del indexador está en la tarjeta de System Status. En estado estable va a segundos del head; el backfill desde frío está limitado por el throughput de los RPCs.
-- *'¿Podemos agregar la métrica X?'* — Probablemente sí, si es derivable de sign events, consumer txs o user txs. Sumar fuentes de datos externas es una conversación más grande."
+- *'¿Podemos agregar la métrica X?'* — Probablemente sí, si es derivable de sign events, consumer txs, user txs o eventos MPC. Sumar fuentes de datos externas es una conversación más grande.
+- *'¿Quién es `tx-bench.near`?'* — Un bot de benchmarking que llama directamente a `v1.signer.sign()`. Lo etiquetamos como `synthetic` para distinguirlo del tráfico orgánico, pero no lo filtramos: su latencia de respond es señal real sobre la salud de los nodos."
 
 ---
 
@@ -160,3 +180,9 @@ Preguntas que probablemente surjan:
 | Relayer | La cuenta que envía la meta-tx y paga el gas. |
 | First seen (Accounts) | Primera vez que indexamos una cuenta vía un sign event de FastAuth. **No** es la creación on-chain. |
 | Active (Accounts) | Cuentas con actividad observada en la ventana. |
+| `v1.signer` | El contrato MPC de NEAR Chain Signatures. FastAuth lo llama vía cross-contract; otros consumidores lo llaman directamente. |
+| Yield→resume latency | Tiempo entre el `sign()` (que hace yield) y el primer `respond()` matched de un nodo. Métrica estrella del MPC consensus dashboard. |
+| Sign request | Una llamada a `v1.signer.sign()`, parseada del log estructurado del contrato. |
+| Respond | Una llamada a `v1.signer.respond()` por un nodo MPC. Cada sign tiene N respond (uno por nodo participante). |
+| `tx-bench.near` | Bot de benchmarking que llama directamente a `v1.signer`. Etiquetado como `synthetic` para distinguir de tráfico orgánico. |
+| `mpc_log_parse_skipped` | Tombstones de txs que no produjeron log parseable (típicamente FastAuth signs rechazados por el guard antes de llegar a MPC). Evita loops de RPC. |

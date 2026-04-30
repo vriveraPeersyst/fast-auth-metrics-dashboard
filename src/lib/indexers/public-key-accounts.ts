@@ -16,10 +16,6 @@ const DEFAULT_LOOKUP_URL_TEMPLATES = [
   "https://api.fastnear.com/v1/public_key/{publicKey}/all",
 ];
 
-const DEFAULT_NEARBLOCKS_URL_TEMPLATES = [
-  "https://api.nearblocks.io/v1/kitwallet/publicKey/{publicKey}/accounts",
-];
-
 async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
@@ -95,13 +91,6 @@ function resolveLookupUrlTemplates(): string[] {
   const unique = [...new Set(configured)];
 
   return unique.length > 0 ? unique : DEFAULT_LOOKUP_URL_TEMPLATES;
-}
-
-function resolveNearBlocksUrlTemplates(): string[] {
-  const plural = process.env.FASTAUTH_PUBLIC_KEY_ACCOUNTS_NEARBLOCKS_TEMPLATES;
-  const configured = parseHttpPoolTemplates(hasConfiguredValue(plural) ? plural : null);
-  const unique = [...new Set(configured)];
-  return unique.length > 0 ? unique : DEFAULT_NEARBLOCKS_URL_TEMPLATES;
 }
 
 function resolveMpcContractId(predecessorId: string): string {
@@ -246,21 +235,13 @@ async function fetchAccountsFromPool(
 
 async function fetchAccountsForPublicKey(
   fastNearPool: HttpEndpointPool,
-  nearBlocksPool: HttpEndpointPool,
   publicKey: string,
 ): Promise<string[]> {
-  // Query both sources in parallel, mirror near-mobile's
-  // aggregated-near.indexer.ts pattern: union + dedupe. Both indexers
-  // typically agree, but each occasionally returns a different result
-  // (FastNEAR may lag indexing; NearBlocks may have its own caching) so
-  // taking the union catches edge-case multi-account keys and protects
-  // against any single source's outage.
-  const [fastNear, nearBlocks] = await Promise.all([
-    fetchAccountsFromPool(fastNearPool, publicKey, "fastnear"),
-    fetchAccountsFromPool(nearBlocksPool, publicKey, "nearblocks"),
-  ]);
-
-  return [...new Set([...fastNear, ...nearBlocks])];
+  // FastNEAR is the only source. NearBlocks was used as a fallback but
+  // got Cloudflare-walled and rate-limited (403/429), generating noise
+  // without resolving anything FastNEAR didn't already cover.
+  const fastNear = await fetchAccountsFromPool(fastNearPool, publicKey, "fastnear");
+  return [...new Set(fastNear)];
 }
 
 async function fetchDerivedPublicKey(params: {
@@ -328,11 +309,6 @@ export async function collectFastAuthPublicKeyAccounts(
   const fastNearPool = new HttpEndpointPool(lookupTemplates, {
     placeholder: "publicKey",
     bearerToken: process.env.FASTNEAR_API_KEY ?? null,
-  });
-  const nearBlocksTemplates = resolveNearBlocksUrlTemplates();
-  const nearBlocksPool = new HttpEndpointPool(nearBlocksTemplates, {
-    placeholder: "publicKey",
-    bearerToken: process.env.NEARBLOCKS_API_KEY ?? null,
   });
   const rpcManager = createNearRpcManager();
 
@@ -496,11 +472,7 @@ export async function collectFastAuthPublicKeyAccounts(
       publicKeys,
       resolvePositiveIntEnv("FASTAUTH_PUBLIC_KEY_LOOKUP_CONCURRENCY", DEFAULT_LOOKUP_CONCURRENCY),
       async ([publicKey, meta]) => {
-        const accounts = await fetchAccountsForPublicKey(
-          fastNearPool,
-          nearBlocksPool,
-          publicKey,
-        );
+        const accounts = await fetchAccountsForPublicKey(fastNearPool, publicKey);
         lookupRows.push({ publicKey, meta, accounts });
       },
     );
@@ -710,10 +682,10 @@ export async function collectFastAuthPublicKeyAccounts(
     const touchedAccounts = candidateAccountIds;
 
     // ── Periodic orphan-retry sweep ────────────────────────────────────
-    // Once an hour, re-query FastNEAR/NearBlocks for pubkeys whose sign
-    // events are still unstamped (user_account_id IS NULL) AND that are
-    // not yet in pka. Covers the "user signed once, FastNEAR was down at
-    // that moment, user never came back" failure mode, which the back-stamp
+    // Once an hour, re-query FastNEAR for pubkeys whose sign events are
+    // still unstamped (user_account_id IS NULL) AND that are not yet in
+    // pka. Covers the "user signed once, FastNEAR was down at that
+    // moment, user never came back" failure mode, which the back-stamp
     // sweep alone cannot recover from (pka stays empty, so the join below
     // has nothing to use).
     let orphanRetryAttempted = 0;
@@ -785,11 +757,7 @@ export async function collectFastAuthPublicKeyAccounts(
           orphanReps,
           resolvePositiveIntEnv("FASTAUTH_PUBLIC_KEY_LOOKUP_CONCURRENCY", DEFAULT_LOOKUP_CONCURRENCY),
           async (rep) => {
-            const accounts = await fetchAccountsForPublicKey(
-              fastNearPool,
-              nearBlocksPool,
-              rep.public_key,
-            );
+            const accounts = await fetchAccountsForPublicKey(fastNearPool, rep.public_key);
             for (const accountId of accounts) {
               resolvedRows.push({
                 publicKey: rep.public_key,

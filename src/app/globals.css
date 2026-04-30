@@ -826,10 +826,77 @@ h3 {
   line-height: 1.4;
 }
 
+.mpcLivenessRow {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  height: 18px;
+}
+
+.mpcLivenessCell {
+  flex: 1 1 auto;
+  min-width: 6px;
+  border-radius: 1px;
+}
+
+.mpcLivenessCell--empty {
+  background: var(--color-line);
+  opacity: 0.25;
+}
+
+.mpcLivenessCell--lo {
+  background: var(--color-line);
+  opacity: 0.55;
+}
+
+.mpcLivenessCell--mid {
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.mpcLivenessCell--hi {
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.mpcLivenessCell--peak {
+  background: currentColor;
+  opacity: 1;
+}
+
 .recentFailuresList {
   margin-top: 16px;
+}
+
+.recentFailuresList[open] {
   display: grid;
   gap: 8px;
+}
+
+.recentFailuresHeader {
+  cursor: pointer;
+}
+
+.recentFailuresList[open] > .recentFailuresHeader {
+  margin-bottom: 8px;
+}
+
+.topFailureReasonsDetails {
+  margin-top: 16px;
+}
+
+.topFailureReasonsSummary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-subtle);
+  font-weight: 700;
+}
+
+.topFailureReasonsDetails[open] > .topFailureReasonsSummary {
+  margin-bottom: 8px;
 }
 
 .topFailureReasonsPagination {
@@ -1471,5 +1538,54 @@ tbody tr:hover {
     opacity: 1;
     visibility: visible;
     margin-top: 8px;
+  }
+}
+
+/* ─── MpcNetworkSection — mobile responsiveness ──────────────────────── */
+
+@media (max-width: 700px) {
+  /* Liveness heatmap — tighten cells so 24 hourly buckets remain legible
+     inside a table cell on phones. The wrapping `.tableWrap` still allows
+     horizontal scroll if needed. */
+  .mpcLivenessRow {
+    gap: 1px;
+    height: 16px;
+  }
+
+  .mpcLivenessCell {
+    min-width: 4px;
+  }
+
+  /* Long monospace strings inside table cells (paths, request keys, tx
+     hashes inside <code>) should wrap on mobile instead of forcing
+     horizontal scroll on every column. The .tableWrap parent still scrolls
+     for genuinely-wide tables. */
+  .tableWrap td code {
+    word-break: break-all;
+    white-space: normal;
+  }
+
+  /* KPI tile hints can carry longer text now (e.g. "Sign w/o respond
+     >1 min, last hour") — let them wrap to two lines rather than ellipse. */
+  .kpiTileHint {
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 480px) {
+  /* On very narrow screens the heatmap row can fall below ~120px wide
+     after the Node column eats space. Lock a minimum so the cells stay
+     individually visible — the table cell will scroll horizontally
+     within .tableWrap if it doesn't fit. */
+  .mpcLivenessRow {
+    min-width: 120px;
+  }
+
+  /* Hide the trailing total-responses column on very narrow screens to
+     give the heatmap room. The same number is also in the roster table
+     immediately below. */
+  .mpcLivenessTotalCol {
+    display: none;
   }
 }

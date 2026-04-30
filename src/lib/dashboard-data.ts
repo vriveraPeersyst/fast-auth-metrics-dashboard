@@ -336,6 +336,55 @@ type TopAccountRow = {
   lastEventAt: Date | null;
 };
 
+type MpcLatencyRow = {
+  signerId: string;
+  responses: number;
+  avgLatencySec: number;
+  p50LatencySec: number;
+  p95LatencySec: number;
+  p99LatencySec: number;
+};
+
+type MpcRosterRow = {
+  accountId: string;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  responses24h: number;
+  responses7d: number;
+  responsesAll: number;
+};
+
+type MpcLivenessSeries = {
+  accountId: string;
+  buckets: number[];
+  total: number;
+};
+
+type MpcPendingRequest = {
+  txHash: string;
+  predecessorId: string;
+  scheme: string;
+  path: string | null;
+  source: string;
+  trafficSource: string;
+  blockTimestamp: Date;
+  pendingSec: number;
+};
+
+type MpcNetworkOverview = {
+  responses24h: number;
+  signsTotal24h: number;
+  signsOrganic24h: number;
+  signsSynthetic24h: number;
+  signsByFastAuth24h: number;
+  pendingCount: number;
+  bucketHours: number;
+  latencyByNode: MpcLatencyRow[];
+  liveness: MpcLivenessSeries[];
+  roster: MpcRosterRow[];
+  pending: MpcPendingRequest[];
+};
+
 type DashboardData = {
   accountsOverview: AggregateAccountsMetrics;
   transactionOverview: TransactionMetrics;
@@ -359,6 +408,7 @@ type DashboardData = {
   topPublicKeyAccounts: PublicKeyAccountRow[];
   indexerCheckpoints: IndexerCheckpointRow[];
   tableCounts: DbTableCounts;
+  mpcNetwork: MpcNetworkOverview;
 };
 
 const MAX_RELAYER_ROWS = 30;
@@ -1804,6 +1854,223 @@ function toCollectorHealth(params: {
   };
 }
 
+const MPC_LIVENESS_BUCKET_HOURS = 1;
+const MPC_LIVENESS_LOOKBACK_HOURS = 24;
+const MPC_PENDING_LOOKBACK_MIN = 60;
+// Sub-minute pending is normal MPC propagation (yield→quorum→resume),
+// not a stuck request. Only surface entries that have aged past this.
+const MPC_PENDING_MIN_AGE_SEC = 60;
+const MPC_PENDING_LIMIT = 20;
+
+async function loadMpcNetworkOverview(now: Date, last24h: Date): Promise<MpcNetworkOverview> {
+  const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const livenessLookback = new Date(now.getTime() - MPC_LIVENESS_LOOKBACK_HOURS * 60 * 60 * 1000);
+  const pendingLookback = new Date(now.getTime() - MPC_PENDING_LOOKBACK_MIN * 60 * 1000);
+
+  const [
+    latencyRowsRaw,
+    rosterRowsRaw,
+    livenessRowsRaw,
+    pendingRowsRaw,
+    responses24hCountRow,
+    signCountsRow,
+    pendingCountRow,
+  ] = await Promise.all([
+    // Latency yield→resume per node, last 24h. JOIN on requestKey.
+    prisma.$queryRaw<
+      Array<{
+        signer_id: string;
+        responses: bigint;
+        avg_latency_sec: number | null;
+        p50_latency_sec: number | null;
+        p95_latency_sec: number | null;
+        p99_latency_sec: number | null;
+      }>
+    >`
+      SELECT
+        resp.signer_id,
+        COUNT(*)::bigint AS responses,
+        AVG(EXTRACT(EPOCH FROM (resp.block_timestamp - req.block_timestamp))) AS avg_latency_sec,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (resp.block_timestamp - req.block_timestamp))
+        ) AS p50_latency_sec,
+        PERCENTILE_CONT(0.95) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (resp.block_timestamp - req.block_timestamp))
+        ) AS p95_latency_sec,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (resp.block_timestamp - req.block_timestamp))
+        ) AS p99_latency_sec
+      FROM mpc_sign_responses resp
+      JOIN mpc_sign_requests req ON req.request_key = resp.request_key
+      WHERE resp.block_timestamp >= ${last24h}
+      GROUP BY resp.signer_id
+      ORDER BY p50_latency_sec ASC NULLS LAST
+    `,
+    // Roster — windowed counts per node from mpc_sign_responses.
+    prisma.$queryRaw<
+      Array<{
+        signer_id: string;
+        first_seen: Date;
+        last_seen: Date;
+        responses_24h: bigint;
+        responses_7d: bigint;
+        responses_all: bigint;
+      }>
+    >`
+      SELECT
+        signer_id,
+        MIN(block_timestamp) AS first_seen,
+        MAX(block_timestamp) AS last_seen,
+        COUNT(*) FILTER (WHERE block_timestamp >= ${last24h})::bigint AS responses_24h,
+        COUNT(*) FILTER (WHERE block_timestamp >= ${last7d})::bigint AS responses_7d,
+        COUNT(*)::bigint AS responses_all
+      FROM mpc_sign_responses
+      GROUP BY signer_id
+      ORDER BY responses_24h DESC, last_seen DESC
+    `,
+    // Liveness buckets — count per (node, hour) over the last 24h.
+    prisma.$queryRaw<
+      Array<{ signer_id: string; bucket: Date; n: bigint }>
+    >`
+      SELECT
+        signer_id,
+        date_trunc('hour', block_timestamp) AS bucket,
+        COUNT(*)::bigint AS n
+      FROM mpc_sign_responses
+      WHERE block_timestamp >= ${livenessLookback}
+      GROUP BY signer_id, bucket
+      ORDER BY signer_id, bucket
+    `,
+    // Pending sign requests — sign without matching respond, aged past
+    // MPC_PENDING_MIN_AGE_SEC, within the last hour.
+    prisma.$queryRaw<
+      Array<{
+        tx_hash: string;
+        predecessor_id: string;
+        scheme: string;
+        path: string | null;
+        source: string;
+        traffic_source: string;
+        block_timestamp: Date;
+        pending_sec: number;
+      }>
+    >`
+      SELECT
+        req.tx_hash,
+        req.predecessor_id,
+        req.scheme,
+        req.path,
+        req.source,
+        req.traffic_source,
+        req.block_timestamp,
+        EXTRACT(EPOCH FROM (NOW() - req.block_timestamp))::float8 AS pending_sec
+      FROM mpc_sign_requests req
+      LEFT JOIN mpc_sign_responses resp ON resp.request_key = req.request_key
+      WHERE resp.tx_hash IS NULL
+        AND req.block_timestamp >= ${pendingLookback}
+        AND req.block_timestamp <= NOW() - (${MPC_PENDING_MIN_AGE_SEC} * INTERVAL '1 second')
+      ORDER BY req.block_timestamp DESC
+      LIMIT ${MPC_PENDING_LIMIT}
+    `,
+    prisma.mpcSignResponse.count({ where: { blockTimestamp: { gte: last24h } } }),
+    prisma.mpcSignRequest.groupBy({
+      by: ["source", "trafficSource"],
+      where: { blockTimestamp: { gte: last24h } },
+      _count: { _all: true },
+    }),
+    prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS n
+      FROM mpc_sign_requests req
+      LEFT JOIN mpc_sign_responses resp ON resp.request_key = req.request_key
+      WHERE resp.tx_hash IS NULL
+        AND req.block_timestamp >= ${pendingLookback}
+        AND req.block_timestamp <= NOW() - (${MPC_PENDING_MIN_AGE_SEC} * INTERVAL '1 second')
+    `,
+  ]);
+
+  const latencyByNode: MpcLatencyRow[] = latencyRowsRaw.map((r) => ({
+    signerId: r.signer_id,
+    responses: Number(r.responses),
+    avgLatencySec: r.avg_latency_sec ?? 0,
+    p50LatencySec: r.p50_latency_sec ?? 0,
+    p95LatencySec: r.p95_latency_sec ?? 0,
+    p99LatencySec: r.p99_latency_sec ?? 0,
+  }));
+
+  const roster: MpcRosterRow[] = rosterRowsRaw.map((r) => ({
+    accountId: r.signer_id,
+    firstSeenAt: r.first_seen,
+    lastSeenAt: r.last_seen,
+    responses24h: Number(r.responses_24h),
+    responses7d: Number(r.responses_7d),
+    responsesAll: Number(r.responses_all),
+  }));
+
+  // Project liveness rows into a fixed-width per-node series. We align
+  // every node to the same bucket grid so the heatmap rows are comparable.
+  const bucketCount = MPC_LIVENESS_LOOKBACK_HOURS;
+  const livenessAnchorMs = livenessLookback.getTime();
+  const bucketByAccount = new Map<string, number[]>();
+  for (const row of livenessRowsRaw) {
+    const key = row.signer_id;
+    let series = bucketByAccount.get(key);
+    if (!series) {
+      series = new Array(bucketCount).fill(0);
+      bucketByAccount.set(key, series);
+    }
+    const offsetHours = Math.floor(
+      (row.bucket.getTime() - livenessAnchorMs) / (60 * 60 * 1000),
+    );
+    if (offsetHours >= 0 && offsetHours < bucketCount) {
+      series[offsetHours] = Number(row.n);
+    }
+  }
+  const liveness: MpcLivenessSeries[] = [...bucketByAccount.entries()]
+    .map(([accountId, buckets]) => ({
+      accountId,
+      buckets,
+      total: buckets.reduce((a, b) => a + b, 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const pending: MpcPendingRequest[] = pendingRowsRaw.map((r) => ({
+    txHash: r.tx_hash,
+    predecessorId: r.predecessor_id,
+    scheme: r.scheme,
+    path: r.path,
+    source: r.source,
+    trafficSource: r.traffic_source,
+    blockTimestamp: r.block_timestamp,
+    pendingSec: Number(r.pending_sec),
+  }));
+
+  let signsOrganic = 0;
+  let signsSynthetic = 0;
+  let signsByFastAuth = 0;
+  let signsTotal = 0;
+  for (const row of signCountsRow) {
+    const n = row._count._all;
+    signsTotal += n;
+    if (row.trafficSource === "synthetic") signsSynthetic += n;
+    else signsOrganic += n;
+    if (row.source === "fastauth") signsByFastAuth += n;
+  }
+
+  return {
+    responses24h: responses24hCountRow,
+    signsTotal24h: signsTotal,
+    signsOrganic24h: signsOrganic,
+    signsSynthetic24h: signsSynthetic,
+    signsByFastAuth24h: signsByFastAuth,
+    pendingCount: Number(pendingCountRow[0]?.n ?? 0),
+    bucketHours: MPC_LIVENESS_BUCKET_HOURS,
+    latencyByNode,
+    liveness,
+    roster,
+    pending,
+  };
+}
+
 export async function getDashboardData(): Promise<DashboardData> {
   const now = new Date();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -1822,6 +2089,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const actionTypeBreakdownPromise = loadActionTypeBreakdown(last24h, last7d, last30d);
   const consumerOutcomesPromise = loadConsumerOutcomes(last24h, last7d, last30d);
   const realActivityPromise = loadRealActivity(last24h, last7d, last30d);
+  const mpcNetworkPromise = loadMpcNetworkOverview(now, last24h);
 
   const [
     accountsTotal,
@@ -2201,6 +2469,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const actionTypeBreakdown = await actionTypeBreakdownPromise;
   const consumerOutcomes = await consumerOutcomesPromise;
   const realActivity = await realActivityPromise;
+  const mpcNetwork = await mpcNetworkPromise;
 
   return {
     accountsOverview,
@@ -2232,5 +2501,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       relayers: relayersTotalCount,
       indexerCheckpoints: indexerCheckpointsTotalCount,
     },
+    mpcNetwork,
   };
 }

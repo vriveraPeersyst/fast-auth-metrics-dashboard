@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { collectFastAuthConsumerHealth } from "@/lib/indexers/fastauth-consumer-health";
 import { collectFastAuthHealth } from "@/lib/indexers/fastauth-health";
 import { collectFastAuthUserHealth } from "@/lib/indexers/fastauth-user-health";
+import { collectMpcConsensus } from "@/lib/indexers/mpc-consensus";
 import { collectNearState } from "@/lib/indexers/near";
 import { collectFastAuthPublicKeyAccounts } from "@/lib/indexers/public-key-accounts";
 import type { IndexerRunResult } from "@/lib/indexers/types";
@@ -61,7 +62,7 @@ export async function runAllIndexers(): Promise<IndexerRunResult[]> {
   // tables, so they can run concurrently. The three health collectors each do
   // bounded work per tick (DISCOVER_LIMIT new + RETRY_LIMIT retries) so they
   // share the public RPC pool predictably.
-  const [near, publicKeyAccounts, health, consumerHealth, userHealth] =
+  const [near, publicKeyAccounts, health, consumerHealth, userHealth, mpcConsensus] =
     await Promise.all([
       runIndexerWithLogs({
         source: "near",
@@ -83,7 +84,11 @@ export async function runAllIndexers(): Promise<IndexerRunResult[]> {
         source: "fastauth_user_health",
         run: () => collectFastAuthUserHealth(prisma),
       }),
+      runIndexerWithLogs({
+        source: "mpc_consensus",
+        run: () => collectMpcConsensus(prisma),
+      }),
     ]);
 
-  return [near, publicKeyAccounts, health, consumerHealth, userHealth];
+  return [near, publicKeyAccounts, health, consumerHealth, userHealth, mpcConsensus];
 }

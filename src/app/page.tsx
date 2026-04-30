@@ -3,6 +3,7 @@ import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
 import { ConsumerOutcomesPanel } from "@/components/consumer-outcomes-panel";
 import { RealActivityPanel } from "@/components/real-activity-panel";
+import { MpcNetworkSection } from "@/components/mpc-network-section";
 import { TopAccountsTable } from "@/components/top-accounts-table";
 import { TransactionsPanel } from "@/components/transactions-panel";
 import { UptimeBar } from "@/components/uptime-bar";
@@ -171,8 +172,10 @@ function RecentFailuresList({
   emptyText: string;
 }) {
   return (
-    <div className="recentFailuresList">
-      <div className="recentFailuresHeader">{heading}</div>
+    <details className="recentFailuresList">
+      <summary className="recentFailuresHeader">
+        {heading} ({rows.length})
+      </summary>
       {rows.length === 0 ? (
         <p className="recentFailuresEmpty">{emptyText}</p>
       ) : (
@@ -200,7 +203,7 @@ function RecentFailuresList({
           </div>
         ))
       )}
-    </div>
+    </details>
   );
 }
 
@@ -561,6 +564,9 @@ export default async function Home() {
         </div>
         <TopAccountsTable rows={data.topAccounts} />
       </section>
+
+      {/* MPC Network — consensus dashboard sections (Phase 3 of plan) */}
+      <MpcNetworkSection data={data.mpcNetwork} />
 
       {/* 4. Indexer status — kept visible per ops needs */}
       <p className="sectionKicker">Indexer status</p>

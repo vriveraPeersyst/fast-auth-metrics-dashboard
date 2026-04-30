@@ -58,6 +58,114 @@ model NearTransaction {
   @@map("near_transactions")
 }
 
+// Raw landing for transactions whose receiver is the MPC contract
+// (`v1.signer` on mainnet). Populated by Path 4 of `near.ts` during the
+// same block scan as `near_transactions`. Independent of the FastAuth
+// flow — these are predominantly `respond` calls from MPC node accounts,
+// plus governance / TEE attestation traffic. Decoders consume this table.
+model MpcTransaction {
+  txHash               String   @id @map("tx_hash")
+  blockHeight          BigInt?  @map("block_height")
+  blockTimestamp       DateTime? @map("block_timestamp")
+  signerAccountId      String?  @map("signer_account_id")
+  signerPublicKey      String?  @map("signer_public_key")
+  receiverId           String?  @map("receiver_id")
+  methodName           String?  @map("method_name")
+  executionStatus      String?  @map("execution_status")
+  failureReason        String?  @map("failure_reason")
+  gasBurnt             BigInt?  @map("gas_burnt")
+  attachedDepositYocto String?  @map("attached_deposit_yocto")
+  payload              Json     @map("payload_json")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp])
+  @@index([methodName, blockTimestamp])
+  @@index([signerAccountId, blockTimestamp])
+  @@map("mpc_transactions")
+}
+
+// MPC node mart. Populated by aggregation from mpc_sign_responses by
+// `mpc-consensus.ts`. Phase 4 may extend with attestation / governance
+// fields (TLS pubkey, voted code hash, etc.).
+model MpcNode {
+  accountId      String   @id @map("account_id")
+  firstSeenAt    DateTime @map("first_seen_at")
+  lastSeenAt     DateTime @map("last_seen_at")
+  totalResponses Int      @default(0) @map("total_responses")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([lastSeenAt])
+  @@map("mpc_nodes")
+}
+
+// One row per `sign:` log observed in a v1.signer receipt. Sourced from:
+//   - mpc_transactions where method_name = 'sign'  (source = 'direct')
+//   - near_transactions where receiver = FastAuth contract  (source = 'fastauth')
+// Matched 1:N against MpcSignResponse via requestKey = `{scheme}:{hex(payload)}`.
+model MpcSignRequest {
+  txHash          String   @id @map("tx_hash")
+  blockHeight     BigInt   @map("block_height")
+  blockTimestamp  DateTime @map("block_timestamp")
+  predecessorId   String   @map("predecessor_id")
+  requestKey      String   @map("request_key")
+  path            String?  @map("path")
+  scheme          String   @map("scheme")
+  payloadHex      String   @map("payload_hex")
+  domainId        Int?     @map("domain_id")
+  keyVersion      Int?     @map("key_version")
+  source          String   @map("source")
+  trafficSource   String   @default("organic") @map("traffic_source")
+  executionStatus String?  @map("execution_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp])
+  @@index([requestKey])
+  @@index([predecessorId, blockTimestamp])
+  @@index([trafficSource, blockTimestamp])
+  @@map("mpc_sign_requests")
+}
+
+// Tombstones for txs the collector tried to parse but couldn't extract
+// a usable log from — usually because the sign() call was rejected by
+// the guard (FastAuth) before reaching v1.signer. Without this table,
+// `mpc-consensus.ts` rediscovers the same dead-end txs every cycle and
+// burns RPC quota indefinitely. The anti-join in discovery filters them
+// out. Reason values: 'no_v1signer_receipt' | 'no_sign_log' |
+// 'no_respond_log' | 'parse_failed'.
+model MpcLogParseSkipped {
+  txHash    String   @id @map("tx_hash")
+  source    String   @map("source")
+  reason    String   @map("reason")
+  skippedAt DateTime @default(now()) @map("skipped_at")
+
+  @@index([source, skippedAt])
+  @@map("mpc_log_parse_skipped")
+}
+
+// One row per `respond:` log observed in a v1.signer receipt. Source:
+//   - mpc_transactions where method_name = 'respond'
+// Matched against MpcSignRequest via requestKey.
+model MpcSignResponse {
+  txHash          String   @id @map("tx_hash")
+  blockHeight     BigInt   @map("block_height")
+  blockTimestamp  DateTime @map("block_timestamp")
+  signerId        String   @map("signer_id")
+  requestKey      String   @map("request_key")
+  scheme          String   @map("scheme")
+  payloadHex      String   @map("payload_hex")
+  executionStatus String?  @map("execution_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp])
+  @@index([requestKey])
+  @@index([signerId, blockTimestamp])
+  @@map("mpc_sign_responses")
+}
+
 model FastAuthSignEvent {
   id                    BigInt   @id @default(autoincrement())
   txHash                String   @map("tx_hash")

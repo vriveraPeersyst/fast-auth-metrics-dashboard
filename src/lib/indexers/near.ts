@@ -25,6 +25,9 @@ const NEAR_CHUNK_CONCURRENCY = 6;
 const NEAR_BACKFILL_START_HEIGHT = 194_800_000;
 const NEAR_PROGRESS_LOG_EVERY_BLOCKS = 10;
 
+// Mainnet only — testnet (`v1.signer-prod.testnet`) is not in our scan scope.
+const MPC_CONTRACT_IDS: ReadonlySet<string> = new Set(["v1.signer"]);
+
 export type NearBlockResponse = {
   result?: {
     header?: {
@@ -889,27 +892,31 @@ export async function persistNearBlock(
   signEvents: FastAuthSignEventSeed[],
   consumerTransactions: Prisma.FastAuthConsumerTransactionCreateManyInput[] = [],
   userTransactions: Prisma.FastAuthUserTransactionCreateManyInput[] = [],
+  mpcTransactions: Prisma.MpcTransactionCreateManyInput[] = [],
 ): Promise<{
   insertedTransactions: number;
   insertedSignEvents: number;
   insertedConsumerTransactions: number;
   insertedUserTransactions: number;
+  insertedMpcTransactions: number;
 }> {
   if (
     transactions.length === 0 &&
     signEvents.length === 0 &&
     consumerTransactions.length === 0 &&
-    userTransactions.length === 0
+    userTransactions.length === 0 &&
+    mpcTransactions.length === 0
   ) {
     return {
       insertedTransactions: 0,
       insertedSignEvents: 0,
       insertedConsumerTransactions: 0,
       insertedUserTransactions: 0,
+      insertedMpcTransactions: 0,
     };
   }
 
-  const [txInsert, signInsert, consumerInsert, userInsert] = await Promise.all([
+  const [txInsert, signInsert, consumerInsert, userInsert, mpcInsert] = await Promise.all([
     transactions.length > 0
       ? prisma.nearTransaction.createMany({
           data: transactions,
@@ -934,6 +941,12 @@ export async function persistNearBlock(
           skipDuplicates: true,
         })
       : Promise.resolve({ count: 0 }),
+    mpcTransactions.length > 0
+      ? prisma.mpcTransaction.createMany({
+          data: mpcTransactions,
+          skipDuplicates: true,
+        })
+      : Promise.resolve({ count: 0 }),
   ]);
 
   return {
@@ -941,6 +954,7 @@ export async function persistNearBlock(
     insertedSignEvents: signInsert.count,
     insertedConsumerTransactions: consumerInsert.count,
     insertedUserTransactions: userInsert.count,
+    insertedMpcTransactions: mpcInsert.count,
   };
 }
 
@@ -1111,6 +1125,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
     let indexedFastAuthSignEvents = 0;
     let indexedConsumerTransactions = 0;
     let indexedUserTransactions = 0;
+    let indexedMpcTransactions = 0;
     let latestPersistedHash: string | null = null;
     let latestPersistedHeight = -1;
     // Tracks heights that finished (successfully or safely-skipped) so we can
@@ -1165,6 +1180,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         string,
         Prisma.FastAuthConsumerTransactionCreateManyInput
       >();
+      const uniqueMpcTxs = new Map<string, Prisma.MpcTransactionCreateManyInput>();
 
       const chunkPayloads: NearChunkResponse[] = new Array(chunkHashes.length);
       await runWithConcurrency(chunkHashes, chunkConcurrency, async (chunkHash, idx) => {
@@ -1350,6 +1366,32 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
               }
             }
           }
+
+          // Path 4: MPC raw landing. Any tx whose receiver is the v1.signer
+          // MPC contract — predominantly `respond` calls from MPC node
+          // accounts, plus governance / TEE attestation traffic
+          // (`vote_*`, `submit_participant_info`, etc.). Stored to its own
+          // table so the consensus dashboard queries it independently of
+          // the FastAuth flow. Disjoint from Paths 1-3: an MPC tx never
+          // matches them (different signer set, different receiver).
+          if (normalizedReceiverId && MPC_CONTRACT_IDS.has(normalizedReceiverId)) {
+            const { methodName: mpcMethodName, attachedDepositYocto: mpcAttachedDeposit } =
+              parseActionMetadata(tx.actions);
+            uniqueMpcTxs.set(txHash, {
+              txHash,
+              blockHeight: BigInt(blockHeight),
+              blockTimestamp: toDateFromNearNs(blockTimestamp),
+              signerAccountId: tx.signer_id ?? null,
+              signerPublicKey: relayerPublicKey,
+              receiverId: normalizedReceiverId,
+              methodName: mpcMethodName,
+              executionStatus,
+              failureReason,
+              gasBurnt,
+              attachedDepositYocto: mpcAttachedDeposit,
+              payload: toTransactionPayload(tx),
+            });
+          }
         }
       }
 
@@ -1362,6 +1404,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         [...uniqueSignEvents.values()],
         [...uniqueConsumerTxs.values()],
         [...uniqueUserTxs.values()],
+        [...uniqueMpcTxs.values()],
       );
 
       processed += 1;
@@ -1369,6 +1412,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       indexedFastAuthSignEvents += insertResult.insertedSignEvents;
       indexedConsumerTransactions += insertResult.insertedConsumerTransactions;
       indexedUserTransactions += insertResult.insertedUserTransactions;
+      indexedMpcTransactions += insertResult.insertedMpcTransactions;
 
       if (blockHeight > latestPersistedHeight) {
         latestPersistedHeight = blockHeight;
@@ -1394,6 +1438,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
             latestPersistedHeight,
             indexedTransactions,
             indexedFastAuthSignEvents,
+            indexedMpcTransactions,
             skippedHeights,
             elapsedMs,
           }),
@@ -1471,7 +1516,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
         source: "near",
         status: "error",
         inserted: indexedTransactions,
-        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+        details: `${message} | Partial progress: persisted up to height ${highestContiguous} (latest persisted ${latestPersistedHeight}); indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs, ${indexedMpcTransactions} mpc txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
       };
     }
 
@@ -1482,7 +1527,7 @@ export async function collectNearState(prisma: PrismaClient): Promise<IndexerRun
       details:
         processed === 0
           ? `Checkpoint already at latest final block ${latestHeight}.`
-          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
+          : `Processed block heights ${startHeight}..${targetHeight}${targetHeight < latestHeight ? ` (latest is ${latestHeight})` : ""}; indexed ${indexedTransactions} transactions, ${indexedFastAuthSignEvents} sign events, ${indexedConsumerTransactions} consumer txs (${linkedConsumerCount} newly linked), ${indexedUserTransactions} user-activity txs, ${indexedMpcTransactions} mpc txs; rebuilt marts (${martCounts.relayers} relayers); skipped ${skippedHeights} empty heights.`,
     };
   } catch (error) {
     return {
