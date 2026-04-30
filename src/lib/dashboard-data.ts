@@ -23,7 +23,7 @@ type TimeWindowMetrics = {
 
 type AggregateAccountsMetrics = {
   totalAccounts: number;
-  created: TimeWindowMetrics;
+  firstSeen: TimeWindowMetrics;
   active: TimeWindowMetrics;
 };
 
@@ -1825,9 +1825,9 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const [
     accountsTotal,
-    accountsCreated24h,
-    accountsCreated7d,
-    accountsCreated30d,
+    accountsFirstSeen24h,
+    accountsFirstSeen7d,
+    accountsFirstSeen30d,
     accountsActive24h,
     accountsActive7d,
     accountsActive30d,
@@ -1969,13 +1969,13 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const accountsOverview: AggregateAccountsMetrics = {
     totalAccounts: accountsTotal,
-    // "Created all" = lifetime accounts ever observed by the indexer.
-    // "Active all" = same set, since every account has a lastSeenAt; both
-    // collapse to accountsTotal in the all-time column.
-    created: {
-      last24h: accountsCreated24h,
-      last7d: accountsCreated7d,
-      last30d: accountsCreated30d,
+    // firstSeen = first time we observed the account in a FastAuth sign event,
+    // not its on-chain creation. The all-time column collapses to accountsTotal
+    // because every account has a firstSeenAt and a lastSeenAt.
+    firstSeen: {
+      last24h: accountsFirstSeen24h,
+      last7d: accountsFirstSeen7d,
+      last30d: accountsFirstSeen30d,
       all: accountsTotal,
     },
     active: {

@@ -451,8 +451,8 @@ export default async function Home() {
             <span className="kpiTileHint">All time</span>
           </div>
           <div className="kpiTile">
-            <span className="kpiTileLabel">Created</span>
-            <span className="kpiTileValue">{formatNumber(data.accountsOverview.created.last24h)}</span>
+            <span className="kpiTileLabel">First seen</span>
+            <span className="kpiTileValue">{formatNumber(data.accountsOverview.firstSeen.last24h)}</span>
             <span className="kpiTileHint">Last 24h</span>
           </div>
           <div className="kpiTile">
@@ -475,11 +475,11 @@ export default async function Home() {
             </thead>
             <tbody>
               <tr>
-                <td>Created</td>
-                <td>{formatNumber(data.accountsOverview.created.last24h)}</td>
-                <td>{formatNumber(data.accountsOverview.created.last7d)}</td>
-                <td>{formatNumber(data.accountsOverview.created.last30d)}</td>
-                <td>{formatNumber(data.accountsOverview.created.all)}</td>
+                <td>First seen</td>
+                <td>{formatNumber(data.accountsOverview.firstSeen.last24h)}</td>
+                <td>{formatNumber(data.accountsOverview.firstSeen.last7d)}</td>
+                <td>{formatNumber(data.accountsOverview.firstSeen.last30d)}</td>
+                <td>{formatNumber(data.accountsOverview.firstSeen.all)}</td>
               </tr>
               <tr>
                 <td>Active</td>
