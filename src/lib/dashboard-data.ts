@@ -371,18 +371,90 @@ type MpcPendingRequest = {
   pendingSec: number;
 };
 
+type MpcGovernanceCategoryCount = {
+  category: string;
+  count24h: number;
+  count7d: number;
+  count30d: number;
+};
+
+type MpcGovernanceEvent = {
+  txHash: string;
+  blockTimestamp: Date;
+  eventType: string;
+  category: string;
+  actorId: string;
+  payloadSummary: string | null;
+};
+
+type MpcVersionDriftRow = {
+  actorId: string;
+  votedHashShort: string;
+  votedHashFull: string;
+  votedAt: Date;
+};
+
+type MpcGovernanceOverview = {
+  total24h: number;
+  total7d: number;
+  byCategory: MpcGovernanceCategoryCount[];
+  recent: MpcGovernanceEvent[];
+  // Latest vote_code_hash per node — drift indicator. If all entries
+  // have the same `votedHashShort`, the network is in consensus.
+  codeHashDrift: MpcVersionDriftRow[];
+};
+
+type MpcDataRange = {
+  earliestSignResponseAt: Date | null;
+  earliestSignRequestAt: Date | null;
+  earliestGovernanceEventAt: Date | null;
+};
+
 type MpcNetworkOverview = {
-  responses24h: number;
-  signsTotal24h: number;
-  signsOrganic24h: number;
-  signsSynthetic24h: number;
-  signsByFastAuth24h: number;
+  // Counts whose underlying source (mpc_transactions / mpc_sign_responses /
+  // mpc_sign_requests source='direct') is forward-only from when Path 4
+  // started indexing. When that's < 24h, we report what we can and label
+  // accordingly. windowHours stamps the actual aligned window the dashboard
+  // is reporting on (1 ≤ windowHours ≤ 24).
+  windowHours: number;
+  responses: number;
+  signsTotal: number;
+  signsOrganic: number;
+  signsSynthetic: number;
+  signsByFastAuth: number;
   pendingCount: number;
   bucketHours: number;
+  // ISO ms timestamp anchoring the leftmost liveness bucket (≈ 24h ago).
+  // The component reconstructs each bucket's [start, end) from this anchor
+  // so tooltips can render absolute times.
+  livenessAnchorMs: number;
   latencyByNode: MpcLatencyRow[];
   liveness: MpcLivenessSeries[];
   roster: MpcRosterRow[];
   pending: MpcPendingRequest[];
+  governance: MpcGovernanceOverview;
+  dataRange: MpcDataRange;
+};
+
+type FastAuthContractState = {
+  contractId: string;
+  label: string;
+  description: string;
+  snapshotAt: Date;
+  balanceYocto: string | null;
+  storageUsage: bigint | null;
+  codeHash: string | null;
+  fullAccessKeys: number | null;
+  locked: boolean | null;
+  config: Record<string, unknown>;
+  sourceMetadata: Record<string, unknown> | null;
+};
+
+type FastAuthContractsOverview = {
+  contracts: FastAuthContractState[];
+  // Earliest snapshot across all tracked contracts — communicates how
+  // far back the per-contract history goes on the dashboard.
+  earliestSnapshotAt: Date | null;
 };
 
 type DashboardData = {
@@ -409,6 +481,7 @@ type DashboardData = {
   indexerCheckpoints: IndexerCheckpointRow[];
   tableCounts: DbTableCounts;
   mpcNetwork: MpcNetworkOverview;
+  fastAuthContracts: FastAuthContractsOverview;
 };
 
 const MAX_RELAYER_ROWS = 30;
@@ -1861,20 +1934,134 @@ const MPC_PENDING_LOOKBACK_MIN = 60;
 // not a stuck request. Only surface entries that have aged past this.
 const MPC_PENDING_MIN_AGE_SEC = 60;
 const MPC_PENDING_LIMIT = 20;
+const MPC_GOVERNANCE_RECENT_LIMIT = 50;
+
+const FASTAUTH_CONTRACT_LABELS: Record<string, { label: string; description: string }> = {
+  "fast-auth.near": {
+    label: "FastAuth",
+    description: "Main entry point. Verifies JWTs (via guards) and forwards signing to v1.signer.",
+  },
+  "jwt.fast-auth.near": {
+    label: "JWT Guard Router",
+    description: "Routes JWT verification to the appropriate guard contract.",
+  },
+  "auth0.jwt.fast-auth.near": {
+    label: "Auth0 Guard",
+    description: "Verifies Auth0-issued JWTs against owner-managed RSA public keys.",
+  },
+};
+
+async function loadFastAuthContracts(): Promise<FastAuthContractsOverview> {
+  const [rows, earliest] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        contract_id: string;
+        snapshot_at: Date;
+        balance_yocto: string | null;
+        storage_usage: bigint | null;
+        code_hash: string | null;
+        full_access_keys: number | null;
+        config_json: unknown;
+        source_metadata_json: unknown;
+      }>
+    >`
+      SELECT DISTINCT ON (contract_id)
+        contract_id,
+        snapshot_at,
+        balance_yocto,
+        storage_usage,
+        code_hash,
+        full_access_keys,
+        config_json,
+        source_metadata_json
+      FROM fastauth_contract_snapshots
+      ORDER BY contract_id, snapshot_at DESC
+    `,
+    prisma.fastAuthContractSnapshot.findFirst({
+      orderBy: { snapshotAt: "asc" },
+      select: { snapshotAt: true },
+    }),
+  ]);
+
+  const contracts = rows.map((r) => {
+    const meta = FASTAUTH_CONTRACT_LABELS[r.contract_id] ?? {
+      label: r.contract_id,
+      description: "",
+    };
+    const config =
+      r.config_json && typeof r.config_json === "object" && !Array.isArray(r.config_json)
+        ? (r.config_json as Record<string, unknown>)
+        : {};
+    const sourceMetadata =
+      r.source_metadata_json &&
+      typeof r.source_metadata_json === "object" &&
+      !Array.isArray(r.source_metadata_json)
+        ? (r.source_metadata_json as Record<string, unknown>)
+        : null;
+    return {
+      contractId: r.contract_id,
+      label: meta.label,
+      description: meta.description,
+      snapshotAt: r.snapshot_at,
+      balanceYocto: r.balance_yocto,
+      storageUsage: r.storage_usage,
+      codeHash: r.code_hash,
+      fullAccessKeys: r.full_access_keys,
+      // "Locked" in NEARBlocks parlance = no full-access keys remaining.
+      locked: r.full_access_keys === null ? null : r.full_access_keys === 0,
+      config,
+      sourceMetadata,
+    };
+  });
+
+  return {
+    contracts,
+    earliestSnapshotAt: earliest?.snapshotAt ?? null,
+  };
+}
 
 async function loadMpcNetworkOverview(now: Date, last24h: Date): Promise<MpcNetworkOverview> {
   const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const livenessLookback = new Date(now.getTime() - MPC_LIVENESS_LOOKBACK_HOURS * 60 * 60 * 1000);
   const pendingLookback = new Date(now.getTime() - MPC_PENDING_LOOKBACK_MIN * 60 * 1000);
+
+  // The "Last 24h" KPIs depend on three forward-only tables. Until those
+  // have 24h of history, picking last24h as the lower bound creates an
+  // asymmetric window across sources (FastAuth-side from near_transactions
+  // has 24h+, direct-side from mpc_transactions has only as much as we've
+  // indexed). We anchor the comparison to the most-recent of (last24h,
+  // earliest mpc_transaction) so numerator and denominator share a window.
+  const earliestMpcTx = await prisma.mpcTransaction.findFirst({
+    where: { blockTimestamp: { not: null } },
+    orderBy: { blockTimestamp: "asc" },
+    select: { blockTimestamp: true },
+  });
+  const earliestMpcTxMs = earliestMpcTx?.blockTimestamp?.getTime() ?? null;
+  const windowStartMs = Math.max(
+    last24h.getTime(),
+    earliestMpcTxMs ?? last24h.getTime(),
+  );
+  const windowStart = new Date(windowStartMs);
+  const windowHours = Math.max(
+    1,
+    Math.min(24, Math.ceil((now.getTime() - windowStartMs) / (60 * 60 * 1000))),
+  );
 
   const [
     latencyRowsRaw,
     rosterRowsRaw,
     livenessRowsRaw,
     pendingRowsRaw,
-    responses24hCountRow,
+    responsesWindowCountRow,
     signCountsRow,
     pendingCountRow,
+    governanceRecentRowsRaw,
+    governanceCategoryRowsRaw,
+    governanceCodeHashDriftRowsRaw,
+    earliestSignResponseRow,
+    earliestSignRequestRow,
+    earliestGovernanceEventRow,
   ] = await Promise.all([
     // Latency yield→resume per node, last 24h. JOIN on requestKey.
     prisma.$queryRaw<
@@ -1972,10 +2159,10 @@ async function loadMpcNetworkOverview(now: Date, last24h: Date): Promise<MpcNetw
       ORDER BY req.block_timestamp DESC
       LIMIT ${MPC_PENDING_LIMIT}
     `,
-    prisma.mpcSignResponse.count({ where: { blockTimestamp: { gte: last24h } } }),
+    prisma.mpcSignResponse.count({ where: { blockTimestamp: { gte: windowStart } } }),
     prisma.mpcSignRequest.groupBy({
       by: ["source", "trafficSource"],
-      where: { blockTimestamp: { gte: last24h } },
+      where: { blockTimestamp: { gte: windowStart } },
       _count: { _all: true },
     }),
     prisma.$queryRaw<Array<{ n: bigint }>>`
@@ -1986,6 +2173,64 @@ async function loadMpcNetworkOverview(now: Date, last24h: Date): Promise<MpcNetw
         AND req.block_timestamp >= ${pendingLookback}
         AND req.block_timestamp <= NOW() - (${MPC_PENDING_MIN_AGE_SEC} * INTERVAL '1 second')
     `,
+    // Governance: recent events for the timeline.
+    prisma.mpcConsensusEvent.findMany({
+      orderBy: { blockTimestamp: "desc" },
+      take: MPC_GOVERNANCE_RECENT_LIMIT,
+      select: {
+        txHash: true,
+        blockTimestamp: true,
+        eventType: true,
+        category: true,
+        actorId: true,
+        payload: true,
+      },
+    }),
+    // Governance: counts per category × time window.
+    prisma.$queryRaw<
+      Array<{ category: string; count_24h: bigint; count_7d: bigint; count_30d: bigint }>
+    >`
+      SELECT
+        category,
+        COUNT(*) FILTER (WHERE block_timestamp >= ${last24h})::bigint AS count_24h,
+        COUNT(*) FILTER (WHERE block_timestamp >= ${last7d})::bigint AS count_7d,
+        COUNT(*) FILTER (WHERE block_timestamp >= ${last30d})::bigint AS count_30d
+      FROM mpc_consensus_events
+      WHERE block_timestamp >= ${last30d}
+      GROUP BY category
+      ORDER BY count_30d DESC
+    `,
+    // Governance: latest vote_code_hash per actor — version-drift indicator.
+    // If actors disagree on the latest hash, the network is mid-upgrade or
+    // (more concerning) split.
+    prisma.$queryRaw<
+      Array<{ actor_id: string; payload: unknown; voted_at: Date }>
+    >`
+      SELECT DISTINCT ON (actor_id)
+        actor_id,
+        payload_json AS payload,
+        block_timestamp AS voted_at
+      FROM mpc_consensus_events
+      WHERE event_type = 'vote_code_hash'
+        AND block_timestamp >= ${last30d}
+      ORDER BY actor_id, block_timestamp DESC
+    `,
+    // Earliest tracked timestamps — surfaced on the dashboard so users
+    // know "data available since X". All three derived tables are
+    // forward-only (the collector started after near.ts had already been
+    // running).
+    prisma.mpcSignResponse.findFirst({
+      orderBy: { blockTimestamp: "asc" },
+      select: { blockTimestamp: true },
+    }),
+    prisma.mpcSignRequest.findFirst({
+      orderBy: { blockTimestamp: "asc" },
+      select: { blockTimestamp: true },
+    }),
+    prisma.mpcConsensusEvent.findFirst({
+      orderBy: { blockTimestamp: "asc" },
+      select: { blockTimestamp: true },
+    }),
   ]);
 
   const latencyByNode: MpcLatencyRow[] = latencyRowsRaw.map((r) => ({
@@ -2056,19 +2301,139 @@ async function loadMpcNetworkOverview(now: Date, last24h: Date): Promise<MpcNetw
     if (row.source === "fastauth") signsByFastAuth += n;
   }
 
+  // Build the governance overview. Try to extract a one-line summary from
+  // the decoded JSON payload — picks up common cases (hashes, account
+  // IDs, key versions). Falls back to "—" when nothing useful surfaces.
+  const governanceRecent: MpcGovernanceEvent[] = governanceRecentRowsRaw.map((r) => ({
+    txHash: r.txHash,
+    blockTimestamp: r.blockTimestamp,
+    eventType: r.eventType,
+    category: r.category,
+    actorId: r.actorId,
+    payloadSummary: summarizeGovernancePayload(r.eventType, r.payload),
+  }));
+
+  let governanceTotal24h = 0;
+  let governanceTotal7d = 0;
+  const governanceByCategory: MpcGovernanceCategoryCount[] = governanceCategoryRowsRaw.map((r) => {
+    const c24 = Number(r.count_24h);
+    const c7 = Number(r.count_7d);
+    governanceTotal24h += c24;
+    governanceTotal7d += c7;
+    return {
+      category: r.category,
+      count24h: c24,
+      count7d: c7,
+      count30d: Number(r.count_30d),
+    };
+  });
+
+  const codeHashDrift: MpcVersionDriftRow[] = governanceCodeHashDriftRowsRaw
+    .map((r) => {
+      const fullHash = extractStringFromPayload(r.payload, ["code_hash", "hash"]) ?? "";
+      return {
+        actorId: r.actor_id,
+        votedHashFull: fullHash,
+        votedHashShort: fullHash ? `${fullHash.slice(0, 10)}…${fullHash.slice(-6)}` : "(unknown)",
+        votedAt: r.voted_at,
+      };
+    })
+    .sort((a, b) => a.actorId.localeCompare(b.actorId));
+
   return {
-    responses24h: responses24hCountRow,
-    signsTotal24h: signsTotal,
-    signsOrganic24h: signsOrganic,
-    signsSynthetic24h: signsSynthetic,
-    signsByFastAuth24h: signsByFastAuth,
+    windowHours,
+    responses: responsesWindowCountRow,
+    signsTotal,
+    signsOrganic,
+    signsSynthetic,
+    signsByFastAuth,
     pendingCount: Number(pendingCountRow[0]?.n ?? 0),
     bucketHours: MPC_LIVENESS_BUCKET_HOURS,
+    livenessAnchorMs: livenessLookback.getTime(),
     latencyByNode,
     liveness,
     roster,
     pending,
+    governance: {
+      total24h: governanceTotal24h,
+      total7d: governanceTotal7d,
+      byCategory: governanceByCategory,
+      recent: governanceRecent,
+      codeHashDrift,
+    },
+    dataRange: {
+      earliestSignResponseAt: earliestSignResponseRow?.blockTimestamp ?? null,
+      earliestSignRequestAt: earliestSignRequestRow?.blockTimestamp ?? null,
+      earliestGovernanceEventAt: earliestGovernanceEventRow?.blockTimestamp ?? null,
+    },
   };
+}
+
+// Tries to extract a string field by name from a decoded JSON payload.
+// Returns the first match. Used by the version-drift query.
+function extractStringFromPayload(
+  payload: unknown,
+  fieldNames: readonly string[],
+): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  for (const name of fieldNames) {
+    const value = obj[name];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
+// Best-effort one-line summary for a governance event payload, surfaced
+// in the dashboard timeline next to the event type. Recognizes a handful
+// of common shapes; falls back to a compact JSON snippet for the rest.
+function summarizeGovernancePayload(eventType: string, payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+
+  if (typeof obj._decode_error === "string") {
+    return `(decode: ${obj._decode_error})`;
+  }
+
+  switch (eventType) {
+    case "vote_code_hash":
+    case "vote_add_launcher_hash":
+    case "vote_remove_launcher_hash":
+    case "vote_add_os_measurement":
+    case "vote_remove_os_measurement": {
+      const hash =
+        extractStringFromPayload(obj, ["code_hash", "launcher_hash", "os_measurement", "hash"]) ??
+        "";
+      if (hash) return `${hash.slice(0, 10)}…${hash.slice(-6)}`;
+      break;
+    }
+    case "submit_participant_info": {
+      const tls = extractStringFromPayload(obj, ["tls_public_key"]) ?? "";
+      if (tls) return `tls=${tls.slice(0, 22)}…`;
+      break;
+    }
+    case "vote_pk":
+    case "vote_reshared": {
+      const epoch = obj.key_event_id ?? obj.epoch_id ?? obj.attempt_id;
+      if (epoch !== undefined) return `key_event=${JSON.stringify(epoch).slice(0, 40)}`;
+      break;
+    }
+    case "propose_update":
+    case "vote_update": {
+      const id = obj.id ?? obj.update_id;
+      if (id !== undefined) return `update=${JSON.stringify(id).slice(0, 40)}`;
+      break;
+    }
+  }
+
+  // Fallback: compact one-liner of the first few keys.
+  const keys = Object.keys(obj).filter((k) => !k.startsWith("_"));
+  if (keys.length === 0) return null;
+  const preview = keys
+    .slice(0, 3)
+    .map((k) => `${k}=${JSON.stringify(obj[k]).slice(0, 40)}`)
+    .join(", ");
+  return preview;
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -2090,6 +2455,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const consumerOutcomesPromise = loadConsumerOutcomes(last24h, last7d, last30d);
   const realActivityPromise = loadRealActivity(last24h, last7d, last30d);
   const mpcNetworkPromise = loadMpcNetworkOverview(now, last24h);
+  const fastAuthContractsPromise = loadFastAuthContracts();
 
   const [
     accountsTotal,
@@ -2470,6 +2836,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const consumerOutcomes = await consumerOutcomesPromise;
   const realActivity = await realActivityPromise;
   const mpcNetwork = await mpcNetworkPromise;
+  const fastAuthContracts = await fastAuthContractsPromise;
 
   return {
     accountsOverview,
@@ -2502,5 +2869,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       indexerCheckpoints: indexerCheckpointsTotalCount,
     },
     mpcNetwork,
+    fastAuthContracts,
   };
 }

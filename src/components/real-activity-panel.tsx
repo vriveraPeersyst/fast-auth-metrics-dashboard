@@ -533,9 +533,10 @@ export function RealActivityPanel({ data }: { data: RealActivity }) {
             background: "var(--color-surface-muted)",
           }}
         >
-          <strong>Note:</strong> forward-only — earliest user tx: block{" "}
-          <NearblocksLink kind="block" value={data.trackingStartedAt.blockHeight} /> at{" "}
-          <LocalTime iso={data.trackingStartedAt.blockTimestamp} />.
+          Showing user activity since{" "}
+          <LocalTime iso={data.trackingStartedAt.blockTimestamp} /> (block{" "}
+          <NearblocksLink kind="block" value={data.trackingStartedAt.blockHeight} />). Earlier
+          history is not tracked.
         </p>
       ) : null}
 

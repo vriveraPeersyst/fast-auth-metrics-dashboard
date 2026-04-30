@@ -3,6 +3,7 @@ import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
 import { ConsumerOutcomesPanel } from "@/components/consumer-outcomes-panel";
 import { RealActivityPanel } from "@/components/real-activity-panel";
+import { FastAuthContractsSection } from "@/components/fastauth-contracts-section";
 import { MpcNetworkSection } from "@/components/mpc-network-section";
 import { TopAccountsTable } from "@/components/top-accounts-table";
 import { TransactionsPanel } from "@/components/transactions-panel";
@@ -13,6 +14,17 @@ import { getDashboardData } from "@/lib/dashboard-data";
 // Static prerendering would freeze the page to deploy-time data, so we force a
 // fresh server render on every request.
 export const dynamic = "force-dynamic";
+
+function formatNumber(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+function formatSignedNumber(value: number): string {
+  if (value > 0) {
+    return `+${value.toLocaleString("en-US")}`;
+  }
+  return value.toLocaleString("en-US");
+}
 
 function formatAgeMinutes(ageMinutes: number | null): string {
   if (ageMinutes === null) {
@@ -50,15 +62,17 @@ function toStatusLabel(status: "healthy" | "lagging" | "stale" | "no_data"): str
   }
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString("en-US");
-}
-
-function formatSignedNumber(value: number): string {
-  if (value > 0) {
-    return `+${value.toLocaleString("en-US")}`;
+function toLagStatus(blocksBehind: number | null): "healthy" | "lagging" | "stale" | "no_data" {
+  if (blocksBehind === null) {
+    return "no_data";
   }
-  return value.toLocaleString("en-US");
+  if (blocksBehind <= 150) {
+    return "healthy";
+  }
+  if (blocksBehind <= 5_000) {
+    return "lagging";
+  }
+  return "stale";
 }
 
 function formatDurationMinutes(minutes: number | null): string {
@@ -84,19 +98,6 @@ function formatDurationMinutes(minutes: number | null): string {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours === 0 ? `${days}d` : `${days}d ${remainingHours}h`;
-}
-
-function toLagStatus(blocksBehind: number | null): "healthy" | "lagging" | "stale" | "no_data" {
-  if (blocksBehind === null) {
-    return "no_data";
-  }
-  if (blocksBehind <= 150) {
-    return "healthy";
-  }
-  if (blocksBehind <= 5_000) {
-    return "lagging";
-  }
-  return "stale";
 }
 
 function toChainHealthStatus(
@@ -564,6 +565,9 @@ export default async function Home() {
         </div>
         <TopAccountsTable rows={data.topAccounts} />
       </section>
+
+      {/* FastAuth contracts — current state from periodic view-calls */}
+      <FastAuthContractsSection data={data.fastAuthContracts} />
 
       {/* MPC Network — consensus dashboard sections (Phase 3 of plan) */}
       <MpcNetworkSection data={data.mpcNetwork} />

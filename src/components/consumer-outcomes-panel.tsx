@@ -184,10 +184,10 @@ export function ConsumerOutcomesPanel({ data }: { data: ConsumerOutcomes }) {
             background: "var(--color-surface-muted)",
           }}
         >
-          <strong>Note:</strong> consumer transactions are indexed forward-only — historical txs
-          before this collector started are not present. Earliest consumer tx in DB: block{" "}
-          <NearblocksLink kind="block" value={data.trackingStartedAt.blockHeight} /> at{" "}
-          <LocalTime iso={data.trackingStartedAt.blockTimestamp} />.
+          Showing consumer activity since{" "}
+          <LocalTime iso={data.trackingStartedAt.blockTimestamp} /> (block{" "}
+          <NearblocksLink kind="block" value={data.trackingStartedAt.blockHeight} />). Earlier
+          history is not tracked.
         </p>
       ) : null}
 

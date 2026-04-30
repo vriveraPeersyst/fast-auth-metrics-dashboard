@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { collectFastAuthConsumerHealth } from "@/lib/indexers/fastauth-consumer-health";
+import { collectFastAuthContractState } from "@/lib/indexers/fastauth-contract-state";
 import { collectFastAuthHealth } from "@/lib/indexers/fastauth-health";
 import { collectFastAuthUserHealth } from "@/lib/indexers/fastauth-user-health";
 import { collectMpcConsensus } from "@/lib/indexers/mpc-consensus";
@@ -62,33 +63,44 @@ export async function runAllIndexers(): Promise<IndexerRunResult[]> {
   // tables, so they can run concurrently. The three health collectors each do
   // bounded work per tick (DISCOVER_LIMIT new + RETRY_LIMIT retries) so they
   // share the public RPC pool predictably.
-  const [near, publicKeyAccounts, health, consumerHealth, userHealth, mpcConsensus] =
-    await Promise.all([
-      runIndexerWithLogs({
-        source: "near",
-        run: () => collectNearState(prisma),
-      }),
-      runIndexerWithLogs({
-        source: "fastauth_public_keys",
-        run: () => collectFastAuthPublicKeyAccounts(prisma),
-      }),
-      runIndexerWithLogs({
-        source: "fastauth_health",
-        run: () => collectFastAuthHealth(prisma),
-      }),
-      runIndexerWithLogs({
-        source: "fastauth_consumer_health",
-        run: () => collectFastAuthConsumerHealth(prisma),
-      }),
-      runIndexerWithLogs({
-        source: "fastauth_user_health",
-        run: () => collectFastAuthUserHealth(prisma),
-      }),
-      runIndexerWithLogs({
-        source: "mpc_consensus",
-        run: () => collectMpcConsensus(prisma),
-      }),
-    ]);
+  const [
+    near,
+    publicKeyAccounts,
+    health,
+    consumerHealth,
+    userHealth,
+    mpcConsensus,
+    contractState,
+  ] = await Promise.all([
+    runIndexerWithLogs({
+      source: "near",
+      run: () => collectNearState(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "fastauth_public_keys",
+      run: () => collectFastAuthPublicKeyAccounts(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "fastauth_health",
+      run: () => collectFastAuthHealth(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "fastauth_consumer_health",
+      run: () => collectFastAuthConsumerHealth(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "fastauth_user_health",
+      run: () => collectFastAuthUserHealth(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "mpc_consensus",
+      run: () => collectMpcConsensus(prisma),
+    }),
+    runIndexerWithLogs({
+      source: "fastauth_contract_state",
+      run: () => collectFastAuthContractState(prisma),
+    }),
+  ]);
 
-  return [near, publicKeyAccounts, health, consumerHealth, userHealth, mpcConsensus];
+  return [near, publicKeyAccounts, health, consumerHealth, userHealth, mpcConsensus, contractState];
 }

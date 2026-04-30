@@ -837,6 +837,45 @@ h3 {
   flex: 1 1 auto;
   min-width: 6px;
   border-radius: 1px;
+  position: relative;
+}
+
+/* Hover tooltip — replaces the slow native browser title with an
+   instant, on-brand legend. Positioned BELOW the cell so it stays
+   inside the parent .tableWrap (which has overflow-x: auto and would
+   clip a tooltip rendered above on narrow screens). The native `title`
+   attribute is kept as an accessibility / touch fallback. */
+.mpcLivenessCell:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: var(--color-ink, #111);
+  color: var(--color-surface, #fff);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  letter-spacing: 0.02em;
+}
+
+/* Little arrow above the tooltip pointing at the bucket. */
+.mpcLivenessCell:hover::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: var(--color-ink, #111);
+  z-index: 10;
+  pointer-events: none;
 }
 
 .mpcLivenessCell--empty {
@@ -1565,6 +1604,13 @@ tbody tr:hover {
     white-space: normal;
   }
 
+  /* Same idea for definition-list cards (FastAuth contract details): long
+     account IDs / source URLs / hashes wrap rather than overflow the card. */
+  .healthMetaList code {
+    word-break: break-all;
+    white-space: normal;
+  }
+
   /* KPI tile hints can carry longer text now (e.g. "Sign w/o respond
      >1 min, last hour") — let them wrap to two lines rather than ellipse. */
   .kpiTileHint {
@@ -1587,5 +1633,11 @@ tbody tr:hover {
      immediately below. */
   .mpcLivenessTotalCol {
     display: none;
+  }
+
+  /* Tighten tooltip on phones — content is short anyway. */
+  .mpcLivenessCell:hover::after {
+    padding: 4px 8px;
+    font-size: 10px;
   }
 }

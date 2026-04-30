@@ -145,6 +145,55 @@ model MpcLogParseSkipped {
   @@map("mpc_log_parse_skipped")
 }
 
+// Periodic snapshots of the three FastAuth contracts on mainnet
+// (fast-auth.near, jwt.fast-auth.near, auth0.jwt.fast-auth.near).
+// Populated by `fastauth-contract-state.ts` via view-calls, throttled
+// to one snapshot per contract per ~5 min. Append-only — the dashboard
+// reads the latest per contractId via DISTINCT ON.
+model FastAuthContractSnapshot {
+  id              BigInt   @id @default(autoincrement())
+  contractId      String   @map("contract_id")
+  snapshotAt      DateTime @map("snapshot_at")
+  balanceYocto    String?  @map("balance_yocto")
+  storageUsage    BigInt?  @map("storage_usage")
+  codeHash        String?  @map("code_hash")
+  fullAccessKeys  Int?     @map("full_access_keys")
+  // Free-form bag of view-call results: owner, paused, mpc_address,
+  // mpc_domain_id, mpc_key_version, public_keys (for Auth0 guard), etc.
+  // Shape varies by contractId — the dashboard renders known fields and
+  // ignores the rest.
+  config          Json     @map("config_json")
+  sourceMetadata  Json?    @map("source_metadata_json")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([contractId, snapshotAt])
+  @@map("fastauth_contract_snapshots")
+}
+
+// Governance / control-plane events on v1.signer. Populated by the
+// governance pass of `mpc-consensus.ts` from `mpc_transactions` rows
+// whose method_name is in MPC_GOVERNANCE_METHODS. Args decoded inline
+// from the tx payload (no RPC needed). Powers the "Governance & key
+// events" feed and the version-drift indicator in the home.
+model MpcConsensusEvent {
+  txHash          String   @id @map("tx_hash")
+  blockHeight     BigInt   @map("block_height")
+  blockTimestamp  DateTime @map("block_timestamp")
+  eventType       String   @map("event_type")
+  category        String   @map("category")
+  actorId         String   @map("actor_id")
+  payload         Json     @map("payload_json")
+  executionStatus String?  @map("execution_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([blockTimestamp])
+  @@index([eventType, blockTimestamp])
+  @@index([category, blockTimestamp])
+  @@index([actorId, blockTimestamp])
+  @@map("mpc_consensus_events")
+}
+
 // One row per `respond:` log observed in a v1.signer receipt. Source:
 //   - mpc_transactions where method_name = 'respond'
 // Matched against MpcSignRequest via requestKey.

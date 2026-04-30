@@ -294,10 +294,17 @@ Tabla con todos los nodos: `accountId`, `lastSeenAt`, status TEE, version votada
 - Loaders en `src/lib/dashboard-data.ts` (`loadMpcNetworkOverview`) — cuatro queries paralelas: latencia con percentiles SQL, roster con counts ventaneados, liveness en buckets de 1h, pendientes (sign sin respond matcheado).
 - Insertado en `src/app/page.tsx` después de Top Accounts y antes de Indexer Status, según el orden definido en sección 7.
 
-**Fase 4 — Governance + key events**
-- Tabla `mpc_consensus_event`.
-- Decoders de `submit_participant_info`, `vote_code_hash`, `vote_pk`, `vote_reshared`.
-- Visualización en la home (timeline o tarjeta de drift de versión).
+**Fase 4 — Governance + key events *(implementada)***
+- Tabla `mpc_consensus_events` con `(eventType, category, actorId, payload)` indexada por las tres dimensiones.
+- Decoder JSON inline desde `mpc_transactions.payload_json` (sin RPC adicional). Args base64-decoded → JSON.parse → fallback a sentinel `_decode_error` si algo falla.
+- 26 métodos de gobernanza categorizados en 6 buckets: `tee`, `version`, `key_events`, `updates`, `foreign_chains`, `migration`.
+- Pasada nueva en `mpc-consensus.ts` con anti-join, lookback de 30 días (más amplio que las otras pasadas porque governance es raro y queremos histórico completo).
+- UI en la home: tarjeta overview con KPIs (events 24h/7d, code-hash consensus indicator), tabla por categoría, **tabla de drift de code_hash por nodo**, y timeline cronológico con resumen por evento (`payloadSummary` extrae hash/tls/key_event_id según el tipo).
+
+**Fase 4.1 — FastAuth contract state *(implementada)***
+- Séptimo collector `fastauth-contract-state.ts`: snapshot periódico (cada ~5 min) de los tres contratos FastAuth en mainnet vía view-calls. Para cada uno persiste balance / storage / code_hash / full_access_keys (→ locked) + config JSON con view methods (`owner`, `paused`, `mpc_address`, `mpc_domain_id`, `mpc_key_version`, `version`, `get_public_keys` para Auth0) + `contract_source_metadata` (NEP-330).
+- Tabla `fastauth_contract_snapshots` append-only. Throttled vía `fastauth_contract_state_last_run_at` checkpoint.
+- UI: nueva sección **FastAuth Contracts** en la home con tres tarjetas (FastAuth, JWT Guard Router, Auth0 Guard) mostrando estado actual + config + source metadata. Para Auth0 Guard incluye un `<details>` colapsable con las RSA public keys activas.
 
 **Fase 5 — CKD + foreign tx pipelines** (cuando haya demanda).
 
@@ -357,15 +364,24 @@ Los `sign:` logs de FastAuth aparecen en receipts de `near_transactions` (ya cap
 - **Fase 2**: tres tablas derivadas (`mpc_node`, `mpc_sign_requests`, `mpc_sign_responses`), collector `mpc-consensus.ts` con tres pasadas de discovery (respond + sign-direct + sign-fastauth), mart `mpc_node` reconstruido por ciclo, integrado en `runAllIndexers`.
 - **Fase 3**: `MpcNetworkSection` en la home con cuatro sub-secciones (latencia, liveness, roster, pending), tipos y loaders en `dashboard-data.ts`.
 
-**Pendiente del usuario**:
+**Pendiente del usuario** (cada fase requiere un migrate; todas son aditivas):
 
 ```bash
+# Fase 0:
+pnpm prisma migrate dev --name add_mpc_transactions
+# Fase 2:
 pnpm prisma migrate dev --name add_mpc_consensus_tables
+# Fase 2.1 (post-deploy):
+pnpm prisma migrate dev --name add_mpc_log_parse_skipped
+# Fase 4:
+pnpm prisma migrate dev --name add_mpc_consensus_events
+# Fase 4.1:
+pnpm prisma migrate dev --name add_fastauth_contract_snapshots
 ```
 
-Luego deploy y dejar que el worker corra unas pasadas. Una vez los datos lleguen, la sección "MPC Network" aparecerá en la home automáticamente. Si no hay datos aún, renderiza un placeholder ("collector is warming up") en lugar de errores.
+Después del deploy, dejar al worker correr. La sección "MPC Network" en la home incluye los cuatro paneles de Fase 3 (latencia, liveness, roster, pending) más los tres de Fase 4 (governance overview, code-hash drift, recent events timeline). Si no hay datos aún, cada panel renderiza placeholder.
 
-**Siguiente fase opcional (Fase 4)** — gobernanza + key events:
-- Decoders de `submit_participant_info`, `vote_code_hash`, `vote_pk`, `vote_reshared`.
-- Tabla `mpc_consensus_event`.
-- Visualización en la home (timeline o tarjeta de drift de versión).
+**Siguiente fase posible (Fase 5)** — pipelines CKD + foreign tx verification:
+- Decoders de `respond_ckd` / `respond_verify_foreign_tx`.
+- Tablas paralelas (`mpc_ckd_*` / `mpc_foreign_tx_*`) con la misma forma que sign↔respond.
+- Solo vale la pena cuando el volumen lo justifique (en steady state actual son ~127/día CKD y ~2/día foreign-tx).

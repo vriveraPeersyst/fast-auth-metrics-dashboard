@@ -22,14 +22,168 @@ const DISCOVER_LIMIT_SIGN_DIRECT = 50;
 // in). The lookback is bounded to 24h so this naturally decays once
 // the backlog drains; in steady state the cap is rarely hit.
 const DISCOVER_LIMIT_SIGN_FASTAUTH = 100;
+// Governance pass — args decoded inline from mpc_transactions.payload, no
+// RPC needed. Volume is tiny (a few events per day in steady state) so the
+// cap exists mostly to bound first-deploy backfill.
+const DISCOVER_LIMIT_GOVERNANCE = 200;
 const TX_STATUS_CONCURRENCY = 8;
 const DISCOVERY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+// Governance can backfill from a wider window — events are rare and the
+// dashboard wants the whole history of recent updates / votes / TEE
+// attestations, not just the last 24h. Bounded to 30 days so first deploy
+// doesn't replay the entire chain.
+const GOVERNANCE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 
 const V1_SIGNER = "v1.signer";
 
 // Synthetic-traffic accounts. Tagged but not filtered — their respond
 // latency is still real signal about node health.
 const SYNTHETIC_PREDECESSORS: ReadonlySet<string> = new Set(["tx-bench.near"]);
+
+// Governance / control-plane methods on v1.signer. Anything matching
+// goes into mpc_consensus_events with its category. List is explicit
+// (not "everything that isn't sign/respond") so unknown methods stay
+// visible as gaps and we can decide whether to map them.
+const MPC_GOVERNANCE_METHODS: ReadonlySet<string> = new Set([
+  // TEE attestation
+  "submit_participant_info",
+  "verify_tee",
+  "clean_invalid_attestations",
+  "clean_tee_status",
+  // Code / launcher / OS hash voting
+  "vote_code_hash",
+  "vote_add_launcher_hash",
+  "vote_remove_launcher_hash",
+  "vote_add_os_measurement",
+  "vote_remove_os_measurement",
+  // Key event lifecycle
+  "vote_pk",
+  "vote_reshared",
+  "vote_abort_key_event_instance",
+  "vote_cancel_keygen",
+  "vote_cancel_resharing",
+  "vote_add_domains",
+  "start_keygen_instance",
+  "start_reshare_instance",
+  // Network parameters / contract upgrades
+  "vote_new_parameters",
+  "vote_update",
+  "propose_update",
+  "remove_update_vote",
+  // Foreign chain governance
+  "vote_foreign_chain_policy",
+  "register_foreign_chain_config",
+  // Node migration
+  "start_node_migration",
+  "conclude_node_migration",
+  "register_backup_service",
+]);
+
+function categorizeGovernanceMethod(method: string): string {
+  if (
+    method === "submit_participant_info" ||
+    method === "verify_tee" ||
+    method.startsWith("clean_")
+  ) {
+    return "tee";
+  }
+  if (
+    method === "vote_code_hash" ||
+    method.startsWith("vote_add_launcher_hash") ||
+    method.startsWith("vote_remove_launcher_hash") ||
+    method.startsWith("vote_add_os_measurement") ||
+    method.startsWith("vote_remove_os_measurement")
+  ) {
+    return "version";
+  }
+  if (
+    method === "vote_pk" ||
+    method === "vote_reshared" ||
+    method === "vote_abort_key_event_instance" ||
+    method === "vote_cancel_keygen" ||
+    method === "vote_cancel_resharing" ||
+    method === "vote_add_domains" ||
+    method.startsWith("start_keygen_") ||
+    method.startsWith("start_reshare_")
+  ) {
+    return "key_events";
+  }
+  if (
+    method === "vote_new_parameters" ||
+    method === "vote_update" ||
+    method === "propose_update" ||
+    method === "remove_update_vote"
+  ) {
+    return "updates";
+  }
+  if (method.includes("foreign_chain")) {
+    return "foreign_chains";
+  }
+  if (method.includes("migration") || method === "register_backup_service") {
+    return "migration";
+  }
+  return "other";
+}
+
+type StoredPayload = {
+  hash?: string;
+  signer_id?: string | null;
+  receiver_id?: string | null;
+  actions?: unknown[];
+};
+
+type FunctionCallAction = {
+  FunctionCall?: {
+    method_name?: string;
+    args?: string;
+    deposit?: string;
+    gas?: number | string;
+  };
+};
+
+// Pulls the args of the matching FunctionCall action out of the stored
+// chunk payload, base64-decodes, and JSON-parses. Returns a structured
+// shape so the dashboard can render either the parsed JSON or, when
+// decoding fails, a diagnostic envelope instead of crashing.
+function decodeFunctionCallArgs(
+  payload: unknown,
+  methodName: string,
+): Prisma.JsonObject {
+  if (!payload || typeof payload !== "object") {
+    return { _decode_error: "no_payload" };
+  }
+  const actions = (payload as StoredPayload).actions;
+  if (!Array.isArray(actions)) {
+    return { _decode_error: "no_actions" };
+  }
+  for (const action of actions as FunctionCallAction[]) {
+    if (action?.FunctionCall?.method_name === methodName) {
+      const argsBase64 = action.FunctionCall.args;
+      if (typeof argsBase64 !== "string" || argsBase64.length === 0) {
+        return { _decode_error: "no_args" };
+      }
+      let utf8: string;
+      try {
+        utf8 = Buffer.from(argsBase64, "base64").toString("utf8");
+      } catch {
+        return { _decode_error: "base64_failed" };
+      }
+      if (utf8.length === 0) {
+        return {};
+      }
+      try {
+        const parsed = JSON.parse(utf8);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Prisma.JsonObject;
+        }
+        return { _value: parsed };
+      } catch {
+        return { _decode_error: "not_json", _raw: utf8 };
+      }
+    }
+  }
+  return { _decode_error: "method_not_found_in_actions" };
+}
 
 type RawTxResponse = {
   result?: {
@@ -319,6 +473,64 @@ async function discoverFastAuthSignCandidates(
     }));
 }
 
+// Governance pass — picks up TEE attestations, version votes, key event
+// lifecycle, contract upgrade votes, etc. Args decoded inline from the
+// stored chunk payload (no RPC). Anti-join keeps it idempotent.
+async function processGovernancePass(
+  prisma: PrismaClient,
+  lookbackCutoff: Date,
+): Promise<{ discovered: number; inserted: number }> {
+  const methodArray = [...MPC_GOVERNANCE_METHODS];
+  const candidates = await prisma.$queryRaw<
+    Array<{
+      tx_hash: string;
+      signer_account_id: string | null;
+      method_name: string;
+      block_height: bigint;
+      block_timestamp: Date;
+      execution_status: string | null;
+      payload_json: unknown;
+    }>
+  >`
+    SELECT
+      m.tx_hash,
+      m.signer_account_id,
+      m.method_name,
+      m.block_height,
+      m.block_timestamp,
+      m.execution_status,
+      m.payload_json
+    FROM mpc_transactions m
+    LEFT JOIN mpc_consensus_events e ON e.tx_hash = m.tx_hash
+    WHERE e.tx_hash IS NULL
+      AND m.method_name = ANY(${methodArray}::text[])
+      AND m.block_timestamp >= ${lookbackCutoff}
+      AND m.block_height IS NOT NULL
+      AND m.block_timestamp IS NOT NULL
+    ORDER BY m.block_timestamp DESC
+    LIMIT ${DISCOVER_LIMIT_GOVERNANCE}
+  `;
+
+  if (candidates.length === 0) return { discovered: 0, inserted: 0 };
+
+  const rows: Prisma.MpcConsensusEventCreateManyInput[] = candidates.map((c) => ({
+    txHash: c.tx_hash,
+    blockHeight: c.block_height,
+    blockTimestamp: c.block_timestamp,
+    eventType: c.method_name,
+    category: categorizeGovernanceMethod(c.method_name),
+    actorId: c.signer_account_id ?? "(unknown)",
+    payload: decodeFunctionCallArgs(c.payload_json, c.method_name),
+    executionStatus: c.execution_status,
+  }));
+
+  const result = await prisma.mpcConsensusEvent.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+  return { discovered: candidates.length, inserted: result.count };
+}
+
 // Aggregate roster from mpc_sign_responses. Same delete-then-insert pattern
 // as `rebuildRelayerMarts` in near.ts. Cheap: bounded by node count (~10).
 async function rebuildMpcNodeMart(prisma: PrismaClient): Promise<number> {
@@ -352,6 +564,7 @@ async function rebuildMpcNodeMart(prisma: PrismaClient): Promise<number> {
 export async function collectMpcConsensus(prisma: PrismaClient): Promise<IndexerRunResult> {
   const rpcManager = createNearRpcManager();
   const lookbackCutoff = new Date(Date.now() - DISCOVERY_LOOKBACK_MS);
+  const governanceLookback = new Date(Date.now() - GOVERNANCE_LOOKBACK_MS);
 
   let fastAuthContractIds: string[] = [];
   try {
@@ -377,8 +590,16 @@ export async function collectMpcConsensus(prisma: PrismaClient): Promise<Indexer
     "fastauth",
   );
 
+  // Governance pass — independent of RPC pool, runs against payload data
+  // already in mpc_transactions. Lookback wider than the rest because
+  // events are rare and we want full recent history on the dashboard.
+  const governanceResult = await processGovernancePass(prisma, governanceLookback);
+
   const totalInserted =
-    respondResult.inserted + directSignResult.inserted + fastAuthSignResult.inserted;
+    respondResult.inserted +
+    directSignResult.inserted +
+    fastAuthSignResult.inserted +
+    governanceResult.inserted;
 
   let nodeRows = 0;
   if (respondResult.inserted > 0) {
@@ -396,6 +617,7 @@ export async function collectMpcConsensus(prisma: PrismaClient): Promise<Indexer
       ` (${directSignResult.skipped} tombstoned);` +
       ` sign-fastauth: ${fastAuthSignResult.inserted}/${fastAuthCandidates.length}` +
       ` (${fastAuthSignResult.skipped} tombstoned);` +
+      ` governance: ${governanceResult.inserted}/${governanceResult.discovered};` +
       ` mpc_nodes mart: ${nodeRows} rows.`,
   };
 }
