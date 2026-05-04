@@ -450,14 +450,23 @@ export default async function Home() {
       <section className="logsPanel logsPanel--featured">
         <div className="panelTitleRow">
           <h2>Accounts</h2>
-          <p>Total {formatNumber(data.accountsOverview.totalAccounts)} accounts indexed.</p>
+          <p>
+            Total {formatNumber(data.accountsOverview.totalAccounts)} accounts —{" "}
+            {formatNumber(data.accountsOverview.migratedAccounts)} migrated +{" "}
+            {formatNumber(data.accountsOverview.indexedAccounts)} indexed.
+          </p>
         </div>
 
         <div className="kpiTileRow">
           <div className="kpiTile">
             <span className="kpiTileLabel">Total accounts</span>
             <span className="kpiTileValue">{formatNumber(data.accountsOverview.totalAccounts)}</span>
-            <span className="kpiTileHint">All time</span>
+            <span className="kpiTileHint">Migrated + indexed</span>
+          </div>
+          <div className="kpiTile">
+            <span className="kpiTileLabel">Migrated</span>
+            <span className="kpiTileValue">{formatNumber(data.accountsOverview.migratedAccounts)}</span>
+            <span className="kpiTileHint">Legacy FastAuth (May 2026)</span>
           </div>
           <div className="kpiTile">
             <span className="kpiTileLabel">First seen</span>
@@ -500,6 +509,10 @@ export default async function Home() {
             </tbody>
           </table>
         </div>
+        <p className="healthDetails">
+          First seen and Active windows reflect indexed accounts only. Migrated
+          accounts are pre-indexer and don&rsquo;t carry per-account timestamps.
+        </p>
       </section>
 
       <section className="logsPanel logsPanel--featured">

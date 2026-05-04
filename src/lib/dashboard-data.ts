@@ -23,9 +23,20 @@ type TimeWindowMetrics = {
 
 type AggregateAccountsMetrics = {
   totalAccounts: number;
+  indexedAccounts: number;
+  migratedAccounts: number;
   firstSeen: TimeWindowMetrics;
   active: TimeWindowMetrics;
 };
+
+// Accounts migrated from the legacy FastAuth backend that pre-date the indexer
+// and don't appear in the `accounts` table until they sign on-chain. Static
+// snapshot shared by Adrià on 2026-05-04. Treated as a disjoint population for
+// headline totals: totalAccounts = indexed + migrated. Windowed first-seen /
+// active metrics intentionally exclude this number — we have no per-account
+// timestamps for the migrated cohort. Bump the constant when a fresh count is
+// shared.
+const MIGRATED_ACCOUNTS_TOTAL = 9_855_138;
 
 type TransactionMetrics = {
   signed: TimeWindowMetrics;
@@ -2602,10 +2613,13 @@ export async function getDashboardData(): Promise<DashboardData> {
   ]);
 
   const accountsOverview: AggregateAccountsMetrics = {
-    totalAccounts: accountsTotal,
+    totalAccounts: accountsTotal + MIGRATED_ACCOUNTS_TOTAL,
+    indexedAccounts: accountsTotal,
+    migratedAccounts: MIGRATED_ACCOUNTS_TOTAL,
     // firstSeen = first time we observed the account in a FastAuth sign event,
-    // not its on-chain creation. The all-time column collapses to accountsTotal
-    // because every account has a firstSeenAt and a lastSeenAt.
+    // not its on-chain creation. The all-time column collapses to indexed only
+    // because we have no per-account first-seen timestamp for the migrated
+    // cohort.
     firstSeen: {
       last24h: accountsFirstSeen24h,
       last7d: accountsFirstSeen7d,
