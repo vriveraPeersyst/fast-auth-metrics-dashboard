@@ -72,18 +72,11 @@ async function main() {
   }
 
   // ── Consumer outcomes fallbacks ──────────────────────────────────────────
+  // (Removed in the dashboard simplify pass — `data.consumerOutcomes` no
+  // longer exists. The diagnostic remains useful but needs to be re-wired
+  // against `data.realActivity.byRelayer/byGuard/byProvider` if revived.)
   console.log("\n─── Consumer Outcomes Fallbacks ───");
-  for (const groupName of ["byRelayer", "byGuard", "byProvider"] as const) {
-    const rows = data.consumerOutcomes[groupName];
-    const fallbackKey = groupName === "byRelayer" ? "(unknown)" : "(unlinked)";
-    const fallback = rows.find((r) => r.key === fallbackKey);
-    const total = rows.reduce((s, r) => s + r.byWindow.all.total, 0);
-    if (fallback) {
-      console.log(`  ⚠ ${groupName} '${fallbackKey}': ${fallback.byWindow.all.total} of ${total} (${fmtPct(fallback.byWindow.all.total, total)})`);
-    } else {
-      console.log(`  ✓ ${groupName}: no '${fallbackKey}' entries`);
-    }
-  }
+  console.log("  (skipped — consumerOutcomes was removed from getDashboardData)");
 
   // ── Diagnostic queries: WHERE are the NULLs coming from? ────────────────
   console.log("\n\n=== Root-cause diagnostics ===\n");

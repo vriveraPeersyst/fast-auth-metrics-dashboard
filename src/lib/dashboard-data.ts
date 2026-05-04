@@ -261,6 +261,14 @@ type RealActivityNested = {
   byMethod: RealActivityCrossRow[];
 };
 
+type FailureReasonRow = {
+  reason: string;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  all: number;
+};
+
 type RealActivity = {
   byWindow: {
     last24h: RealActivityWindow;
@@ -281,7 +289,7 @@ type RealActivity = {
   // Most common failure reason kinds (grouped by the prefix before the first
   // colon, so payload variants collapse into the underlying error class).
   // Sourced from fastauth_user_health_tx.
-  topFailureReasons: ConsumerFailureReasonRow[];
+  topFailureReasons: FailureReasonRow[];
   trackingStartedAt: {
     blockHeight: string;
     blockTimestamp: Date;
