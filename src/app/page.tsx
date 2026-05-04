@@ -10,10 +10,15 @@ import { TransactionsPanel } from "@/components/transactions-panel";
 import { UptimeBar } from "@/components/uptime-bar";
 import { getDashboardData } from "@/lib/dashboard-data";
 
-// The dashboard reads from a database that the worker is constantly writing to.
-// Static prerendering would freeze the page to deploy-time data, so we force a
-// fresh server render on every request.
-export const dynamic = "force-dynamic";
+// The dashboard reads from a database the worker is constantly writing to, but
+// `getDashboardData()` fans out 60+ Prisma queries per render (Promise.all in
+// the page handler plus nested Promise.all in each loadX helper). Rendering on
+// every request was tripping P2024 connection-pool exhaustion against Railway.
+//
+// ISR is the right tool here: re-render on a schedule, serve the cached HTML
+// otherwise. The indexer worker polls every INDEXER_POLL_INTERVAL_MS (default
+// 30s), so 60s of staleness is well within the data's natural cadence.
+export const revalidate = 60;
 
 function formatNumber(value: number): string {
   return value.toLocaleString("en-US");
