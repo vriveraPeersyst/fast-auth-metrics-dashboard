@@ -15,7 +15,6 @@ type ActivityWindow = {
   failed: number;
   successRatePct: number | null;
   distinctUsers: number;
-  volumeUsd: number;
 };
 
 type GroupRow = {
@@ -24,7 +23,6 @@ type GroupRow = {
   last7d: number;
   last30d: number;
   all: number;
-  volumeUsdAll: number;
 };
 
 type CrossRow = {
@@ -34,7 +32,6 @@ type CrossRow = {
   last7d: number;
   last30d: number;
   all: number;
-  volumeUsdAll: number;
 };
 
 type Nested = {
@@ -112,14 +109,6 @@ function formatPercent(value: number | null): string {
   return `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 }
 
-function formatUsd(value: number): string {
-  if (!Number.isFinite(value) || value === 0) return "$0";
-  if (Math.abs(value) >= 1) {
-    return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  }
-  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
-}
-
 function OverallTable({ byWindow }: { byWindow: RealActivity["byWindow"] }) {
   return (
     <div className="tableWrap">
@@ -168,13 +157,6 @@ function OverallTable({ byWindow }: { byWindow: RealActivity["byWindow"] }) {
             <td>{formatNumber(byWindow.last7d.distinctUsers)}</td>
             <td>{formatNumber(byWindow.last30d.distinctUsers)}</td>
             <td>{formatNumber(byWindow.all.distinctUsers)}</td>
-          </tr>
-          <tr>
-            <td>USD volume</td>
-            <td>{formatUsd(byWindow.last24h.volumeUsd)}</td>
-            <td>{formatUsd(byWindow.last7d.volumeUsd)}</td>
-            <td>{formatUsd(byWindow.last30d.volumeUsd)}</td>
-            <td>{formatUsd(byWindow.all.volumeUsd)}</td>
           </tr>
         </tbody>
       </table>
@@ -276,7 +258,6 @@ function GroupTable({
               <th>7d</th>
               <th>30d</th>
               <th>All</th>
-              <th>USD volume (all)</th>
             </tr>
           </thead>
           <tbody>
@@ -299,7 +280,6 @@ function GroupTable({
                   <td>{formatNumber(row.last7d)}</td>
                   <td>{formatNumber(row.last30d)}</td>
                   <td>{formatNumber(row.all)}</td>
-                  <td>{formatUsd(row.volumeUsdAll)}</td>
                 </tr>
               );
             })}
@@ -389,7 +369,6 @@ function CrossTable({
               <th>7d</th>
               <th>30d</th>
               <th>All</th>
-              <th>USD volume (all)</th>
             </tr>
           </thead>
           <tbody>
@@ -428,7 +407,6 @@ function CrossTable({
                   <td>{formatNumber(row.last7d)}</td>
                   <td>{formatNumber(row.last30d)}</td>
                   <td>{formatNumber(row.all)}</td>
-                  <td>{formatUsd(row.volumeUsdAll)}</td>
                 </tr>
               );
             })}

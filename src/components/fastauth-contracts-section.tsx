@@ -21,6 +21,7 @@ type FastAuthContractsOverview = {
 };
 
 const YOCTO_PER_NEAR = BigInt("1000000000000000000000000");
+const AUTH0_GUARD_CONTRACT_ID = "auth0.jwt.fast-auth.near";
 
 function formatNear(yocto: string | null): string {
   if (!yocto) return "—";
@@ -30,7 +31,6 @@ function formatNear(yocto: string | null): string {
   } catch {
     return "—";
   }
-  // Whole-NEAR + 6 decimals, no scientific notation.
   const whole = value / YOCTO_PER_NEAR;
   const remainder = value % YOCTO_PER_NEAR;
   const remainderStr = remainder.toString().padStart(24, "0").slice(0, 6);
@@ -58,117 +58,40 @@ function asString(value: unknown): string | null {
   return null;
 }
 
-type ConfigRow =
-  | { kind: "text"; label: string; value: string; isAccount?: boolean }
-  | { kind: "link"; label: string; value: string; href: string };
-
-// Keys excluded from the generic config table — they're rendered by
-// dedicated widgets (e.g. RSA public keys) or would dominate the card.
-const CONFIG_KEYS_RENDERED_ELSEWHERE: ReadonlySet<string> = new Set([
-  "get_public_keys",
-]);
-
 function isLikelyAccountId(value: string): boolean {
-  // Conservative: non-empty, all lowercase, no spaces, ends with `.near`
-  // or has the `account.parent.near` shape that view methods return.
   return /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/.test(value);
 }
 
-function renderConfigField(label: string, raw: unknown): ConfigRow | null {
-  if (raw === null || raw === undefined) return null;
-  const str = asString(raw);
-  if (str === null) {
-    try {
-      return { kind: "text", label, value: JSON.stringify(raw) };
-    } catch {
-      return null;
-    }
-  }
-  return {
-    kind: "text",
-    label,
-    value: str,
-    isAccount: isLikelyAccountId(str),
-  };
+function pickOwner(config: Record<string, unknown>): string | null {
+  return asString(config.owner);
 }
 
-function buildConfigRows(
+function pickVersion(
   config: Record<string, unknown>,
-  sourceMetadataVersion: string | null,
-): ConfigRow[] {
-  // Render known fields in a stable order, then anything else (alphabetic).
-  const ordered: Array<[string, string]> = [
-    ["owner", "Owner"],
-    ["paused", "Paused"],
-    ["mpc_address", "MPC contract"],
-    ["mpc_domain_id", "MPC domain ID"],
-    ["mpc_key_version", "MPC key version"],
-    ["version", "Version"],
-  ];
-  const seen = new Set<string>();
-  const rows: ConfigRow[] = [];
-  for (const [key, label] of ordered) {
-    if (CONFIG_KEYS_RENDERED_ELSEWHERE.has(key)) continue;
-    if (key in config) {
-      // De-duplicate `version` if it matches the NEP-330 version we'll
-      // already render under "Version (NEP-330)".
-      if (key === "version" && sourceMetadataVersion !== null) {
-        const v = asString(config[key]);
-        if (v !== null && v === sourceMetadataVersion) {
-          seen.add(key);
-          continue;
-        }
-      }
-      const r = renderConfigField(label, config[key]);
-      if (r) rows.push(r);
-      seen.add(key);
-    }
-  }
-  // Anything else not yet rendered. Skip null values and excluded keys.
-  for (const key of Object.keys(config).sort()) {
-    if (seen.has(key)) continue;
-    if (CONFIG_KEYS_RENDERED_ELSEWHERE.has(key)) continue;
-    if (config[key] === null) continue;
-    const r = renderConfigField(key, config[key]);
-    if (r) rows.push(r);
-  }
-  return rows;
+  sourceMetadata: Record<string, unknown> | null,
+): string | null {
+  const fromMetadata = sourceMetadata ? asString(sourceMetadata.version) : null;
+  if (fromMetadata) return fromMetadata;
+  return asString(config.version);
 }
 
-function buildSourceMetadataRows(metadata: Record<string, unknown> | null): ConfigRow[] {
-  if (!metadata) return [];
-  const rows: ConfigRow[] = [];
-  const version = asString(metadata.version);
-  if (version) rows.push({ kind: "text", label: "Version (NEP-330)", value: version });
-  const link = asString(metadata.link);
-  if (link) rows.push({ kind: "link", label: "Source link", value: link, href: link });
-  const standards = metadata.standards;
-  if (Array.isArray(standards) && standards.length > 0) {
-    const flat = standards
-      .map((s) => {
-        if (s && typeof s === "object") {
-          const standard = asString((s as Record<string, unknown>).standard);
-          const ver = asString((s as Record<string, unknown>).version);
-          if (standard && ver) return `${standard} v${ver}`;
-        }
-        return null;
-      })
-      .filter(Boolean);
-    if (flat.length > 0) {
-      rows.push({ kind: "text", label: "Standards", value: flat.join(", ") });
-    }
-  }
-  return rows;
+function pickSourceLink(sourceMetadata: Record<string, unknown> | null): string | null {
+  if (!sourceMetadata) return null;
+  return asString(sourceMetadata.link);
 }
 
-// Compute exponent value from a big-endian byte array (RSA `e` is small).
+function formatLocked(locked: boolean | null, fullAccessKeys: number | null): string {
+  if (locked === null) return "—";
+  if (locked) return "Yes";
+  return `No (${fullAccessKeys ?? "?"} keys)`;
+}
+
 function rsaExponentValue(bytes: number[]): number {
   let v = 0;
   for (const b of bytes) v = v * 256 + (b & 0xff);
   return v;
 }
 
-// First N bytes of the modulus, hex — used as a stable visual fingerprint.
 function rsaModulusFingerprint(bytes: number[], take = 8): string {
   return bytes
     .slice(0, take)
@@ -201,13 +124,12 @@ function formatRsaKey(key: unknown): FormattedRsaKey | null {
 function PublicKeysSummary({ keys }: { keys: unknown }) {
   if (!Array.isArray(keys) || keys.length === 0) return null;
   const formatted = keys.map((k) => formatRsaKey(k)).filter((k): k is FormattedRsaKey => k !== null);
-  // All same bit length? Stamp it in the summary.
   const bitsSet = new Set(formatted.map((f) => f.bits));
   const summaryBits = bitsSet.size === 1 ? `RSA-${[...bitsSet][0]}` : "RSA";
   return (
     <details style={{ marginTop: 12 }}>
       <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--color-ink-subtle)" }}>
-        {keys.length} active {summaryBits} public key{keys.length === 1 ? "" : "s"}
+        Auth0 Guard: {keys.length} active {summaryBits} public key{keys.length === 1 ? "" : "s"}
       </summary>
       <ul
         style={{
@@ -226,101 +148,59 @@ function PublicKeysSummary({ keys }: { keys: unknown }) {
   );
 }
 
-function ConfigRowDd({ row }: { row: ConfigRow }) {
-  if (row.kind === "link") {
-    const display = row.value.replace(/^https?:\/\//, "");
-    return (
-      <a href={row.href} target="_blank" rel="noreferrer noopener">
-        <code>{display.length > 60 ? `${display.slice(0, 48)}…` : display}</code>
-      </a>
-    );
-  }
-  if (row.isAccount) {
-    return (
-      <NearblocksLink kind="account" value={row.value}>
-        <code>{row.value}</code>
-      </NearblocksLink>
-    );
-  }
-  return <code>{row.value.length > 80 ? `${row.value.slice(0, 64)}…` : row.value}</code>;
-}
-
-function ContractCard({ contract }: { contract: FastAuthContractState }) {
-  const sourceRows = buildSourceMetadataRows(contract.sourceMetadata);
-  const sourceMetadataVersion = contract.sourceMetadata
-    ? asString(contract.sourceMetadata.version)
+function ContractRow({ contract }: { contract: FastAuthContractState }) {
+  const owner = pickOwner(contract.config);
+  const version = pickVersion(contract.config, contract.sourceMetadata);
+  const sourceLink = pickSourceLink(contract.sourceMetadata);
+  const sourceLinkDisplay = sourceLink
+    ? sourceLink.replace(/^https?:\/\//, "")
     : null;
-  const configRows = buildConfigRows(contract.config, sourceMetadataVersion);
-  const isAuth0Guard = contract.contractId === "auth0.jwt.fast-auth.near";
-  const auth0PublicKeys = isAuth0Guard ? contract.config.get_public_keys : null;
 
   return (
-    <article className="healthCard">
-      <div className="healthCardHeader">
-        <h3>{contract.label}</h3>
-        <span className="healthBadge healthBadge--ok">
+    <tr>
+      <td>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <strong>{contract.label}</strong>
           <NearblocksLink kind="account" value={contract.contractId}>
-            {contract.contractId}
+            <code style={{ fontSize: 11 }}>{contract.contractId}</code>
           </NearblocksLink>
-        </span>
-      </div>
-      {contract.description ? (
-        <p className="healthDetails" style={{ marginTop: 4 }}>
-          {contract.description}
-        </p>
-      ) : null}
-
-      <dl className="healthMetaList">
-        <div>
-          <dt>Balance</dt>
-          <dd>{formatNear(contract.balanceYocto)}</dd>
         </div>
-        <div>
-          <dt>Storage</dt>
-          <dd>{formatStorage(contract.storageUsage)}</dd>
-        </div>
-        <div>
-          <dt>Code hash</dt>
-          <dd>
-            <code title={contract.codeHash ?? ""}>{formatHash(contract.codeHash)}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Locked</dt>
-          <dd>
-            {contract.locked === null
-              ? "—"
-              : contract.locked
-                ? "Yes (no full-access keys)"
-                : `No (${contract.fullAccessKeys ?? "?"} full-access keys)`}
-          </dd>
-        </div>
-        {configRows.map((row) => (
-          <div key={`cfg-${row.label}`}>
-            <dt>{row.label}</dt>
-            <dd>
-              <ConfigRowDd row={row} />
-            </dd>
-          </div>
-        ))}
-        {sourceRows.map((row) => (
-          <div key={`src-${row.label}`}>
-            <dt>{row.label}</dt>
-            <dd>
-              <ConfigRowDd row={row} />
-            </dd>
-          </div>
-        ))}
-        <div>
-          <dt>Snapshot</dt>
-          <dd>
-            <LocalTime iso={contract.snapshotAt} />
-          </dd>
-        </div>
-      </dl>
-
-      {isAuth0Guard ? <PublicKeysSummary keys={auth0PublicKeys} /> : null}
-    </article>
+      </td>
+      <td>{formatNear(contract.balanceYocto)}</td>
+      <td>{formatStorage(contract.storageUsage)}</td>
+      <td>{formatLocked(contract.locked, contract.fullAccessKeys)}</td>
+      <td>
+        <code title={contract.codeHash ?? ""}>{formatHash(contract.codeHash)}</code>
+      </td>
+      <td>{version ?? "—"}</td>
+      <td>
+        {owner === null ? (
+          "—"
+        ) : isLikelyAccountId(owner) ? (
+          <NearblocksLink kind="account" value={owner}>
+            <code>{owner}</code>
+          </NearblocksLink>
+        ) : (
+          <code>{owner}</code>
+        )}
+      </td>
+      <td>
+        {sourceLink && sourceLinkDisplay ? (
+          <a href={sourceLink} target="_blank" rel="noreferrer noopener">
+            <code>
+              {sourceLinkDisplay.length > 32
+                ? `${sourceLinkDisplay.slice(0, 28)}…`
+                : sourceLinkDisplay}
+            </code>
+          </a>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td>
+        <LocalTime iso={contract.snapshotAt} />
+      </td>
+    </tr>
   );
 }
 
@@ -344,6 +224,9 @@ export function FastAuthContractsSection({
     );
   }
 
+  const auth0Guard = contracts.find((c) => c.contractId === AUTH0_GUARD_CONTRACT_ID);
+  const auth0PublicKeys = auth0Guard ? auth0Guard.config.get_public_keys : null;
+
   return (
     <>
       <p className="sectionKicker">FastAuth Contracts</p>
@@ -351,8 +234,8 @@ export function FastAuthContractsSection({
         <div className="panelTitleRow">
           <h2>FastAuth Contracts — current state</h2>
           <p>
-            Live view of the three FastAuth contracts on NEAR mainnet. Each card refreshes about
-            every 5 minutes; code-hash changes indicate a contract upgrade.
+            Live view of the FastAuth contracts on NEAR mainnet. Refreshed about every 5 minutes;
+            code-hash changes indicate a contract upgrade.
           </p>
           {earliestSnapshotAt ? (
             <p className="healthMetaHint">
@@ -361,11 +244,30 @@ export function FastAuthContractsSection({
           ) : null}
         </div>
 
-        <div className="statusFocusGrid">
-          {contracts.map((c) => (
-            <ContractCard key={c.contractId} contract={c} />
-          ))}
+        <div className="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th>Balance</th>
+                <th>Storage</th>
+                <th>Locked</th>
+                <th>Code hash</th>
+                <th>Version</th>
+                <th>Owner</th>
+                <th>Source</th>
+                <th>Snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((c) => (
+                <ContractRow key={c.contractId} contract={c} />
+              ))}
+            </tbody>
+          </table>
         </div>
+
+        {auth0PublicKeys ? <PublicKeysSummary keys={auth0PublicKeys} /> : null}
       </section>
     </>
   );

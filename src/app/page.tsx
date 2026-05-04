@@ -1,10 +1,8 @@
 import { FastAuthLogo } from "@/components/fastauth-logo";
 import { LocalTime } from "@/components/local-time";
 import { NearblocksLink } from "@/components/nearblocks-link";
-import { ConsumerOutcomesPanel } from "@/components/consumer-outcomes-panel";
 import { RealActivityPanel } from "@/components/real-activity-panel";
 import { FastAuthContractsSection } from "@/components/fastauth-contracts-section";
-import { MpcNetworkSection } from "@/components/mpc-network-section";
 import { TopAccountsTable } from "@/components/top-accounts-table";
 import { TransactionsPanel } from "@/components/transactions-panel";
 import { UptimeBar } from "@/components/uptime-bar";
@@ -29,42 +27,6 @@ function formatSignedNumber(value: number): string {
     return `+${value.toLocaleString("en-US")}`;
   }
   return value.toLocaleString("en-US");
-}
-
-function formatAgeMinutes(ageMinutes: number | null): string {
-  if (ageMinutes === null) {
-    return "-";
-  }
-
-  if (ageMinutes < 1) {
-    return "just now";
-  }
-
-  if (ageMinutes < 60) {
-    return `${ageMinutes}m ago`;
-  }
-
-  const hours = Math.floor(ageMinutes / 60);
-  const minutes = ageMinutes % 60;
-
-  if (minutes === 0) {
-    return `${hours}h ago`;
-  }
-
-  return `${hours}h ${minutes}m ago`;
-}
-
-function toStatusLabel(status: "healthy" | "lagging" | "stale" | "no_data"): string {
-  switch (status) {
-    case "healthy":
-      return "Healthy";
-    case "lagging":
-      return "Lagging";
-    case "stale":
-      return "Stale";
-    default:
-      return "No data";
-  }
 }
 
 function toLagStatus(blocksBehind: number | null): "healthy" | "lagging" | "stale" | "no_data" {
@@ -469,7 +431,7 @@ export default async function Home() {
             <span className="kpiTileHint">Legacy FastAuth (May 2026)</span>
           </div>
           <div className="kpiTile">
-            <span className="kpiTileLabel">First seen</span>
+            <span className="kpiTileLabel">Created</span>
             <span className="kpiTileValue">{formatNumber(data.accountsOverview.firstSeen.last24h)}</span>
             <span className="kpiTileHint">Last 24h</span>
           </div>
@@ -493,7 +455,7 @@ export default async function Home() {
             </thead>
             <tbody>
               <tr>
-                <td>First seen</td>
+                <td>Created</td>
                 <td>{formatNumber(data.accountsOverview.firstSeen.last24h)}</td>
                 <td>{formatNumber(data.accountsOverview.firstSeen.last7d)}</td>
                 <td>{formatNumber(data.accountsOverview.firstSeen.last30d)}</td>
@@ -509,10 +471,6 @@ export default async function Home() {
             </tbody>
           </table>
         </div>
-        <p className="healthDetails">
-          First seen and Active windows reflect indexed accounts only. Migrated
-          accounts are pre-indexer and don&rsquo;t carry per-account timestamps.
-        </p>
       </section>
 
       <section className="logsPanel logsPanel--featured">
@@ -534,13 +492,6 @@ export default async function Home() {
             <span className="kpiTileValue">{formatNumber(data.transactionOverview.failed.last24h)}</span>
             <span className="kpiTileHint">Last 24h</span>
           </div>
-          <div
-            className={`kpiTile${data.transactionOverview.pending.last24h > 0 ? " kpiTile--warn" : ""}`}
-          >
-            <span className="kpiTileLabel">Pending</span>
-            <span className="kpiTileValue">{formatNumber(data.transactionOverview.pending.last24h)}</span>
-            <span className="kpiTileHint">Awaiting classification</span>
-          </div>
           <div className="kpiTile">
             <span className="kpiTileLabel">Total</span>
             <span className="kpiTileValue">{formatNumber(data.transactionOverview.total.all)}</span>
@@ -559,15 +510,7 @@ export default async function Home() {
 
       <section className="logsPanel">
         <div className="panelTitleRow">
-          <h2>Consumer transactions</h2>
-          <p>Relayer-submitted txs signed by FastAuth&rsquo;s MPC — mostly <code>AddKey</code> / <code>DeleteKey</code> from login churn. Real user activity is signed locally; see &ldquo;Real activity&rdquo; below.</p>
-        </div>
-        <ConsumerOutcomesPanel data={data.consumerOutcomes} />
-      </section>
-
-      <section className="logsPanel">
-        <div className="panelTitleRow">
-          <h2>Real activity</h2>
+          <h2>Activity</h2>
           <p>
             On-chain txs from accounts holding a FastAuth-derived MPC key (<code>K_FA</code>) —
             every action the user takes, regardless of which session key signed it.
@@ -586,9 +529,6 @@ export default async function Home() {
 
       {/* FastAuth contracts — current state from periodic view-calls */}
       <FastAuthContractsSection data={data.fastAuthContracts} />
-
-      {/* MPC Network — consensus dashboard sections (Phase 3 of plan) */}
-      <MpcNetworkSection data={data.mpcNetwork} />
 
       {/* 4. Indexer status — kept visible per ops needs */}
       <p className="sectionKicker">Indexer status</p>
@@ -729,48 +669,6 @@ export default async function Home() {
             (<code>pnpm backfill:range</code>).
           </p>
         </article>
-      </section>
-
-      {/* 6. Developer */}
-      <p className="sectionKicker">Developer</p>
-
-      <section className="healthPanel">
-        <div className="panelTitleRow">
-          <h2>Collector health</h2>
-          <p>Freshness is relative to INDEXER_POLL_INTERVAL_MS.</p>
-        </div>
-
-        <div className="healthGrid">
-          {data.collectorHealth.map((collector) => (
-            <article className="healthCard" key={collector.source}>
-              <div className="healthCardHeader">
-                <h3>{collector.displayName}</h3>
-                <span className={`healthBadge healthBadge--${collector.status}`}>
-                  {toStatusLabel(collector.status)}
-                </span>
-              </div>
-
-              <dl className="healthMetaList">
-                <div>
-                  <dt>Last write</dt>
-                  <dd>
-                    <LocalTime iso={collector.lastWriteAt} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>Freshness</dt>
-                  <dd>{formatAgeMinutes(collector.ageMinutes)}</dd>
-                </div>
-                <div>
-                  <dt>Checkpoint</dt>
-                  <dd>{collector.checkpoint ?? "-"}</dd>
-                </div>
-              </dl>
-
-              <p className="healthDetails">{collector.details}</p>
-            </article>
-          ))}
-        </div>
       </section>
 
       <footer className="dashboardFooter">

@@ -1,0 +1,168 @@
+Metrics Dashboard
+
+Status
+
+MPC Status
+100%
+Window
+196698628 – 196844183 (145556 blocks)
+MPC attempts
+19373
+MPC failures
+4
+MPC successes
+19369
+RPC pending
+0
+Computed at
+04 May 2026, 13:36:09 CEST
+Last 24h
+100% uptime · 24h 15m covered
+
+Success rate of MPC signing receipts. Excludes guard-side rejections to isolate MPC network health. Pending tx are excluded from the denominator until classified.
+
+Recent MPC failures (5)
+Fast Auth Status
+100%
+Window
+196698628 – 196844183 (145556 blocks)
+FastAuth tx in window
+19371 ok / 4 failed / 0 pending (19375 total)
+Guard-side failures
+0
+RPC pending
+0
+Last success
+04 May 2026, 13:35:54 CEST (<1m ago)
+Computed at
+04 May 2026, 13:36:09 CEST
+Last 24h
+100% uptime · 24h 15m covered
+
+Last 24h of FastAuth txs, classified by walking each tx’s receipts. Share whose full receipt chain (guard → MPC) executed cleanly. Pending tx are excluded from the denominator until classified.
+
+Recent failures (5)
+Overview
+
+Accounts
+Total 10,040,718 accounts — 9,855,138 migrated + 185,580 indexed.
+
+Total accounts
+10,040,718
+Migrated + indexed
+Migrated
+9,855,138
+Legacy FastAuth (May 2026)
+Created
+16,380
+Last 24h
+Active
+17,064
+Last 24h
+Metric	24h	7d	30d	All
+Created	16,380	111,367	185,580	10,040,718
+Active	17,064	113,221	185,580	10,040,718
+Transactions
+Sign-event volume per window. Tabs slice by provider, guard, or action type.
+
+Signed
+19,373
+Last 24h
+Failed
+4
+Last 24h
+Total
+257,531
+All time
+Overall
+By relayer
+By provider
+By guard
+By action type
+Metric	24h	7d	30d	All
+Signed	19,373	132,004	257,497	257,499
+Failed	4	32	32	32
+Total	19,377	132,036	257,529	257,531
+Activity
+On-chain txs from accounts holding a FastAuth-derived MPC key (K_FA) — every action the user takes, regardless of which session key signed it.
+
+Showing user activity since 28 Apr 2026, 15:37:29 CEST (block 195982596). Earlier history is not tracked.
+
+Overall
+By receiver / dApp
+By method
+By relayer
+By provider
+By guard
+Metric	24h	7d	30d	All
+Total txs	29,175	140,683	140,683	140,683
+Succeeded	28,427	135,484	135,484	135,484
+Failed	748	5,199	5,199	5,199
+Success rate	97.4%	96.3%	96.3%	96.3%
+Active users	21,972	86,859	86,859	86,859
+Top failure reasons (7)
+Top accounts signing with fast-auth.near
+Accounts ranked by FastAuth.sign() calls — driven by login/logout key churn, not product activity. Pick a window to re-rank.
+
+24H
+7D
+30D
+ALL
+Rank	Account	24h	7d	30d	All	First seen	Last seen
+1	632f3cb75d9008…5ac5279caede1	6	77	196	196	20 Apr 2026, 15:21:07 CEST	03 May 2026, 17:32:17 CEST
+2	38f7c6b2de8e63…d31e7b99d6baf	0	50	144	144	20 Apr 2026, 16:30:36 CEST	02 May 2026, 13:52:26 CEST
+3	e341e9bb083d2f…72aaf8b425cd7	25	117	117	117	29 Apr 2026, 02:12:53 CEST	04 May 2026, 11:07:49 CEST
+4	2cdec409967581…bcd17d4780e27	0	84	91	91	25 Apr 2026, 18:27:04 CEST	03 May 2026, 09:58:34 CEST
+5	21aa93de8dd19f…80da34d6a825e	5	66	88	88	21 Apr 2026, 09:27:11 CEST	04 May 2026, 10:58:20 CEST
+6	191cff446c0573…6c5ad7ed5d308	25	67	88	88	21 Apr 2026, 17:50:45 CEST	04 May 2026, 12:14:28 CEST
+7	ca5d611fec64fb…ca80d5a6ebec7	10	43	85	85	20 Apr 2026, 19:08:25 CEST	04 May 2026, 03:06:10 CEST
+8	41cea3c5eb780a…371096a7ccae2	0	32	53	53	25 Apr 2026, 08:50:42 CEST	01 May 2026, 11:04:24 CEST
+9	9c9b171540d8e6…9aeeb97e8af63	3	14	49	49	20 Apr 2026, 21:12:49 CEST	03 May 2026, 21:58:54 CEST
+10	35148978b6b41c…3c769ae037030	0	48	48	48	27 Apr 2026, 22:04:39 CEST	03 May 2026, 12:04:54 CEST
+Showing 1–10 of 50
+Prev
+Page 1 / 5
+Next
+FastAuth Contracts
+
+FastAuth Contracts — current state
+Live view of the FastAuth contracts on NEAR mainnet. Refreshed about every 5 minutes; code-hash changes indicate a contract upgrade.
+
+History tracked since 30 Apr 2026, 15:34:51 CEST.
+
+Contract	Balance	Storage	Locked	Code hash	Version	Owner	Source	Snapshot
+Auth0 Guard
+auth0.jwt.fast-auth.near
+3.000768 Ⓝ	181.59 KB	No (1 keys)	C11B2aFA…H4EiZG	1.0.0	fast-auth-admin.sputnik-dao.near	github.com/Peersyst/fast-auth	04 May 2026, 13:35:59 CEST
+FastAuth
+fast-auth.near
+82.443536 Ⓝ	225.77 KB	No (1 keys)	BvTVSVNZ…rrHJ1Z	1.0.0	fast-auth-admin.sputnik-dao.near	github.com/Peersyst/fast-auth	04 May 2026, 13:35:58 CEST
+JWT Guard Router
+jwt.fast-auth.near
+41.402451 Ⓝ	150.35 KB	No (1 keys)	CrQQNCZZ…Cr7bbt	1.0.0	fast-auth-maintainer.sputnik-dao.near	github.com/Peersyst/fast-auth	04 May 2026, 13:35:59 CEST
+Auth0 Guard: 2 active RSA-2048 public keys
+Indexer status
+
+Indexer lag
+0 blocks
+Chain head
+196844202
+Scanned from
+194869121
+Scanned to
+196844202
+Time behind
+<1m
+Last indexed block
+04 May 2026, 13:36:01 CEST
+Gap between chain head and the last height the indexer has fully scanned.
+
+Missing block ranges
+2 open
+Range	Size	Processed	Pending	Asc cursor	Desc cursor	Status	Recorded	Reason
+167140093 – 194869120	27,729,028	100 (0%)	27,728,928	-	194869021	open	24 Apr 2026, 19:30:00 CEST	pre-existing historical gap: fast-auth.near contract created at 167140093; indexer was seeded at 194869121. No blocks in this range were ever fetched.
+195017046 – 195430164	413,119	44,750 (11%)	368,369	-	195385415	open	24 Apr 2026, 20:29:06 CEST	skip-forward to chain tip: public RPC pool had pruned chunks for blocks in this range (UNKNOWN_CHUNK errors). Requires archival-backed backfill.
+Unindexed block ranges. Open ranges need an archival backfill (pnpm backfill:range).
+
+Built by Peersyst
+NEAR Protocol
