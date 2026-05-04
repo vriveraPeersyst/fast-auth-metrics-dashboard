@@ -7,11 +7,14 @@ import { getDashboardData } from "@/lib/dashboard-data";
 // dashboard's home page renders, reshaped into a stable JSON contract.
 //
 // The payload is large (top accounts, real-activity breakdowns, contracts,
-// missing ranges). Cached for 60s on the edge so a hot cache absorbs landing
-// fan-out without re-running the heavy dashboard query.
-
+// missing ranges) and the underlying query fan-out is heavy. Cache the
+// response for 60s so concurrent landing-page hits share one DB round-trip
+// per window. Without this, the route was running the full getDashboardData()
+// on every request, stacking enough concurrent $queryRaw aggregations to
+// exhaust Railway Postgres's /dev/shm (53100: "could not resize shared memory
+// segment"). force-dynamic was previously set alongside revalidate, which
+// silently disabled the cache — they're contradictory and revalidate loses.
 export const revalidate = 60;
-export const dynamic = "force-dynamic";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",

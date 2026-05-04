@@ -8,11 +8,12 @@ import { prisma } from "@/lib/prisma";
 // to render its "Live network" panel from the same Postgres the dashboard
 // reads, without giving the landing direct DB credentials.
 //
-// Cached for 60s on the edge / browser via Cache-Control. Re-computed at
-// most once per minute even if many landings hit it.
-
+// Cached for 60s — the route handler runs once per window, then the JSON
+// response is served from Next's data cache. Don't add `dynamic =
+// "force-dynamic"` here: it overrides `revalidate` and silently disables the
+// cache, which was tripping Postgres 53100 (shmem exhaustion) under landing
+// load.
 export const revalidate = 60;
-export const dynamic = "force-dynamic";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
