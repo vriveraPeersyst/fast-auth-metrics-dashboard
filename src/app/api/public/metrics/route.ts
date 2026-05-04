@@ -34,6 +34,7 @@ export async function GET() {
   const now = new Date();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   try {
     const [
@@ -41,7 +42,9 @@ export async function GET() {
       newAccounts24h,
       activeAccounts24h,
       activeAccounts7d,
+      activeAccounts30d,
       signEvents7d,
+      signEvents30d,
       relayerCount,
       healthSuccess24h,
       healthFailure24h,
@@ -50,7 +53,9 @@ export async function GET() {
       prisma.account.count({ where: { firstSeenAt: { gte: last24h } } }),
       prisma.account.count({ where: { lastSeenAt: { gte: last24h } } }),
       prisma.account.count({ where: { lastSeenAt: { gte: last7d } } }),
+      prisma.account.count({ where: { lastSeenAt: { gte: last30d } } }),
       prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last7d } } }),
+      prisma.fastAuthSignEvent.count({ where: { blockTimestamp: { gte: last30d } } }),
       prisma.relayer.count(),
       prisma.fastAuthHealthTx.count({
         where: { outcome: "success", blockTimestamp: { gte: last24h } },
@@ -65,7 +70,7 @@ export async function GET() {
       classified24h > 0 ? Math.round((healthSuccess24h / classified24h) * 1000) / 10 : null;
 
     // total = indexed (accounts table) + migrated (legacy FastAuth pre-indexer
-    // snapshot). The two cohorts are disjoint; new24h / active24h / active7d
+    // snapshot). The two cohorts are disjoint; new24h / active{24h,7d,30d}
     // only reflect the indexed cohort because migrated accounts have no
     // per-account timestamps.
     return NextResponse.json(
@@ -78,9 +83,11 @@ export async function GET() {
           new24h: newAccounts24h,
           active24h: activeAccounts24h,
           active7d: activeAccounts7d,
+          active30d: activeAccounts30d,
         },
         signEvents: {
           last7d: signEvents7d,
+          last30d: signEvents30d,
         },
         relayers: {
           total: relayerCount,
