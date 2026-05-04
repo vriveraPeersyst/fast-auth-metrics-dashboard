@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import { MIGRATED_ACCOUNTS_TOTAL } from "@/lib/migrated-accounts";
 import { prisma } from "@/lib/prisma";
 
 type CollectorHealthStatus = "healthy" | "lagging" | "stale" | "no_data";
@@ -28,15 +29,6 @@ type AggregateAccountsMetrics = {
   firstSeen: TimeWindowMetrics;
   active: TimeWindowMetrics;
 };
-
-// Accounts migrated from the legacy FastAuth backend that pre-date the indexer
-// and don't appear in the `accounts` table until they sign on-chain. Static
-// snapshot shared by Adrià on 2026-05-04. Treated as a disjoint population for
-// headline totals: totalAccounts = indexed + migrated. Windowed first-seen /
-// active metrics intentionally exclude this number — we have no per-account
-// timestamps for the migrated cohort. Bump the constant when a fresh count is
-// shared.
-const MIGRATED_ACCOUNTS_TOTAL = 9_855_138;
 
 type TransactionMetrics = {
   signed: TimeWindowMetrics;

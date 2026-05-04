@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { MIGRATED_ACCOUNTS_TOTAL } from "@/lib/migrated-accounts";
 import { prisma } from "@/lib/prisma";
 
 // Public, unauthenticated landing-page KPIs. Aggregate-only — no PII, no
@@ -36,7 +37,7 @@ export async function GET() {
 
   try {
     const [
-      totalAccounts,
+      indexedAccounts,
       newAccounts24h,
       activeAccounts24h,
       activeAccounts7d,
@@ -63,11 +64,17 @@ export async function GET() {
     const uptimePct =
       classified24h > 0 ? Math.round((healthSuccess24h / classified24h) * 1000) / 10 : null;
 
+    // total = indexed (accounts table) + migrated (legacy FastAuth pre-indexer
+    // snapshot). The two cohorts are disjoint; new24h / active24h / active7d
+    // only reflect the indexed cohort because migrated accounts have no
+    // per-account timestamps.
     return NextResponse.json(
       {
         fetchedAt: now.toISOString(),
         accounts: {
-          total: totalAccounts,
+          total: indexedAccounts + MIGRATED_ACCOUNTS_TOTAL,
+          indexed: indexedAccounts,
+          migrated: MIGRATED_ACCOUNTS_TOTAL,
           new24h: newAccounts24h,
           active24h: activeAccounts24h,
           active7d: activeAccounts7d,
